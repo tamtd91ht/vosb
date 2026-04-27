@@ -21,7 +21,7 @@ Format chuẩn:
 - **Ngày**: 2026-04-27
 - **Trạng thái**: Accepted
 - **Bối cảnh**: Backend cần làm 2 việc rất khác nhau: (a) accept SMPP bind từ partner + nhận HTTP request inbound; (b) consume queue → routing → dispatch ra ngoài (HTTP/ESL/SMPP client). Hai việc có pattern chịu tải khác nhau (a là I/O TCP keepalive, b là batch processing).
-- **Quyết định**: Tách 2 Spring Boot app riêng (`smpp-server`, `worker`) trong cùng Gradle multi-module repo, share `core` module (domain + repo + DTO).
+- **Quyết định**: Tách 2 Spring Boot app riêng (`smpp-server`, `worker`) trong cùng Maven multi-module repo, share `core` module (domain + repo + DTO).
 - **Hệ quả**:
   - (+) Scale độc lập (worker chạy nhiều replica, smpp-server chạy ít hơn).
   - (+) Fault isolation: worker crash không ảnh hưởng SMPP session đang bind.
@@ -162,4 +162,74 @@ Format chuẩn:
 
 ---
 
-## ADR mới sẽ append từ ADR-009 trở đi.
+## ADR-009: Build tool — Maven (vs Gradle)
+
+- **Ngày**: 2026-04-27
+- **Trạng thái**: Accepted
+- **Bối cảnh**: Cần chọn build tool cho backend Spring Boot multi-module. Trước đó doc draft ghi Gradle nhưng chưa có code; team cần chốt trước khi scaffold Phase 1.
+- **Quyết định**: Dùng **Maven** (Maven Wrapper `mvnw`/`mvnw.cmd`) cho backend. Parent POM kế thừa `spring-boot-starter-parent`. Module: `core` (jar thường), `smpp-server`, `worker` (apply `spring-boot-maven-plugin` để repackage executable jar).
+- **Hệ quả**:
+  - (+) Spring Boot ecosystem có `spring-boot-starter-parent` quản version sẵn — ít cần khai báo `<dependencyManagement>` thủ công.
+  - (+) IDE (IntelliJ, VS Code) hỗ trợ Maven multi-module ổn định, ít cần Kotlin DSL plugin.
+  - (+) Cú pháp khai báo XML rõ ràng, dễ review trong code review (so với DSL Groovy/Kotlin của Gradle).
+  - (+) Đa số ví dụ Spring Boot + jSMPP + Flyway trên mạng dùng Maven → giảm friction khi tham khảo.
+  - (−) Build chậm hơn Gradle ở dự án rất lớn; ở quy mô 3 module hiện tại không phải vấn đề.
+  - (−) Không có version catalog kiểu `libs.versions.toml`; thay bằng `<properties>` + `<dependencyManagement>` ở parent POM.
+- **Alternatives đã cân nhắc**:
+  - Gradle (Kotlin DSL) + version catalog: build nhanh hơn, DSL mạnh hơn, nhưng team ít quen DSL Kotlin và phải maintain `gradle/libs.versions.toml` riêng.
+  - sbt/Bazel: ngoài scope, không phù hợp ecosystem Java/Spring Boot tiêu chuẩn.
+
+---
+
+## ADR-010: Vert.x Web cho REST, Spring Boot chỉ giữ vòng đời / DI / config
+
+- **Ngày**: 2026-04-27
+- **Trạng thái**: Accepted (phần "Actuator chạy ở port phụ 8081 qua Jetty" superseded bởi ADR-011 — 2026-04-27)
+- **Bối cảnh**: Backend cần expose ~30 REST endpoint (partner inbound, admin, portal, internal webhook). Spring MVC + Tomcat blocking model thread-per-request kém hiệu quả khi có một số endpoint chờ I/O lâu (HTTP gọi 3rd-party, ESL inbound). Đồng thời team muốn giữ Spring Boot ecosystem (Data JPA, AMQP listener, Flyway, Actuator, `@ConfigurationProperties`).
+- **Quyết định**:
+  - HTTP/REST layer: **Vert.x Web** (`io.vertx:vertx-web`). Mọi endpoint là Vert.x `Handler<RoutingContext>`, mount vào sub-router theo path prefix (`/api/v1/*`, `/api/admin/*`, `/api/portal/*`, `/api/internal/*`).
+  - Spring Boot chỉ làm: `@SpringBootApplication`, bean lifecycle (`@Component/@Service/@Repository/@Configuration`), DI, `@ConfigurationProperties`, Spring Data JPA, Spring AMQP, Flyway, Actuator (qua HTTP server riêng — xem hệ quả).
+  - Auth = Vert.x `AuthenticationHandler` per sub-router. **Không** dùng `SecurityFilterChain` / `HttpSecurity`.
+  - Outbound HTTP gọi 3rd-party = `io.vertx.ext.web.client.WebClient`. **Không** dùng Spring `RestTemplate`/`WebClient` (WebFlux).
+  - Blocking work (JPA, JDBC, jSMPP submit) chạy trên `vertx.executeBlocking(...)` hoặc inject `@Service` chạy thread-pool riêng.
+  - **Actuator**: chạy `spring-boot-starter-actuator` ở **management.server.port=8081** (loopback only) qua `spring-boot-starter-jetty` minimal — port chính 8080 vẫn là Vert.x. Nginx KHÔNG forward 8081 ra public.
+- **Hệ quả**:
+  - (+) Event loop Vert.x xử lý connection nhiều hơn với cùng RAM (đặc biệt khi DLR webhook fan-out).
+  - (+) Code handler ngắn, ít magic, dễ test bằng `vertx-junit5` + `WebClient`.
+  - (+) Tách rạch ròi 2 thế giới: Spring container (DI, AMQP listener, JPA tx) và Vert.x event loop (HTTP). Bug ở 1 bên không lan sang bên kia qua filter chain phức tạp.
+  - (−) Lập trình viên phải hiểu rõ "không block event loop" — dễ bug nếu lỡ gọi JPA trực tiếp trong handler.
+  - (−) Cần 2 HTTP server (8080 cho Vert.x, 8081 cho Actuator/Jetty). Dockerfile expose 1 port public, healthcheck dùng 8081 internal.
+  - (−) Mất một số convenience của Spring MVC: `@Valid`, `@ControllerAdvice`, content negotiation tự động — phải tự viết qua Vert.x JSON Schema validator + 1 `failureHandler` chung.
+- **Alternatives đã cân nhắc**:
+  - **Spring MVC + Tomcat (mặc định)**: dễ nhất, ecosystem lớn nhất, nhưng blocking model phí RAM khi có nhiều endpoint I/O-bound. Reject vì priority project là throughput.
+  - **Spring WebFlux + Netty**: reactive, non-blocking, ở trong ecosystem Spring. Reject vì WebFlux + JPA blocking là combo phức tạp (phải bridge Mono ↔ blocking), team chưa quen reactive operator.
+  - **Quarkus + RESTEasy Reactive**: native compile nhanh, performance tốt nhưng thay toàn bộ DI container, ADR-002 đã chốt Spring Boot — đảo ngược quá lớn.
+  - **Micronaut + Netty**: tương tự Quarkus, lý do reject như trên.
+
+---
+
+## ADR-011: Health/readiness endpoint qua Vert.x — không dùng Spring Boot Actuator
+
+- **Ngày**: 2026-04-27
+- **Trạng thái**: Accepted (supersedes phần Actuator của ADR-010)
+- **Bối cảnh**: ADR-010 đề xuất chạy Spring Boot Actuator ở port phụ 8081 qua Jetty embedded để có `/health`, `/metrics`, `/info` builtin. Khi lập kế hoạch implement Phase 1 (xem `smpp/smpp-plan.md` T03/T04), có 2 lý do reconsider: (1) cần thêm `spring-boot-starter-jetty` + `spring-boot-starter-actuator` chỉ để có 1 endpoint health — overhead dependency lớn; (2) Spring Boot 3.3 management server với `management.server.port != server.port` cần servlet container, dễ leak vào main app khi project KHÔNG có `spring-boot-starter-web`.
+- **Quyết định**:
+  - **KHÔNG** dùng Spring Boot Actuator. KHÔNG thêm `spring-boot-starter-actuator`, KHÔNG thêm `spring-boot-starter-jetty`.
+  - Tự code 2 endpoint qua Vert.x Web (cùng port 8080 với HTTP API chính, mount tại root, ngoài 4 sub-router business):
+    - `GET /healthz` — ping DB (`SELECT 1`), Redis (`PING`), RabbitMQ (`Channel.isOpen()`). Trả 200 `{db,redis,rabbit:UP}` hoặc 503 nếu bất kỳ component DOWN. Implement ở T04 (`http/health/HealthHandlers.java`).
+    - `GET /readyz` — flag `applicationReady` set bởi listener `ApplicationReadyEvent`. Trả 200 nếu app đã warmup, 503 nếu chưa.
+  - Nginx **block** `/healthz` ra public; `/readyz` có thể expose cho load balancer probe.
+- **Hệ quả**:
+  - (+) Giảm 2 dependency (`actuator` + `jetty`), giảm RAM ~20-30 MB, giảm 1 HTTP server.
+  - (+) Health logic tường minh — đọc code thay vì dò tài liệu Actuator + endpoint exposure.
+  - (+) Không có endpoint metadata Spring (env, beans, configprops) — giảm rủi ro leak.
+  - (−) Mất `/actuator/metrics`, `/actuator/info`, `/actuator/threaddump`, ... — phase observability sau cần tự thêm Micrometer Prometheus registry bare (không qua actuator).
+  - (−) Phải tự maintain logic check DB/Redis/Rabbit; lỗi check sai có thể mask bug.
+- **Alternatives đã cân nhắc**:
+  - Giữ Actuator + Jetty 8081 (ADR-010 nguyên gốc): đầy đủ endpoint, nhưng overhead dependency + 1 HTTP server thừa cho phase đầu.
+  - Actuator qua WebFlux + Netty 8081: 2 reactive runtime trong 1 JVM (Vert.x + Netty Reactor) — phức tạp.
+  - Actuator standalone JMX (không HTTP): mất khả năng HTTP probe cho Docker healthcheck.
+
+---
+
+## ADR mới sẽ append từ ADR-012 trở đi.

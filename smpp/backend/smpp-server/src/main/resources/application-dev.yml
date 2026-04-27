@@ -1,0 +1,10 @@
+logging:
+  level:
+    com.smpp: DEBUG
+    org.springframework: INFO
+    com.zaxxer.hikari: INFO
+
+# Dev có thể tắt lazy init để fail-fast khi infra docker-compose lên đủ (sau T05).
+# spring:
+#   main:
+#     lazy-initialization: false

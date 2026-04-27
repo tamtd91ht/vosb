@@ -1,0 +1,112 @@
+# Local dev infrastructure (Postgres / Redis / RabbitMQ) + optional smpp-server container.
+#
+# Usage:
+#   docker compose up -d                        # chỉ infra (3 service)
+#   docker compose --profile app up -d --build  # infra + smpp-server
+#   docker compose down                         # stop, giữ volume
+#   docker compose down -v                      # CẨN THẬN: xoá volume (mất data)
+#
+# Tất cả port bind 127.0.0.1 — không expose ra LAN.
+
+name: smpp-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smpp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-smpp_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-smpp_pass}
+      POSTGRES_DB: ${DB_NAME:-smpp_db}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: smpp-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: smpp-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-smpp_admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-smpp_pass}
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # --- App container — chỉ start với --profile app ---
+  smpp-server:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: smpp-server/Dockerfile
+    image: smpp-server:dev
+    container_name: smpp-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-smpp_db}
+      DB_USER: ${DB_USER:-smpp_user}
+      DB_PASSWORD: ${DB_PASSWORD:-smpp_pass}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-smpp_admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-smpp_pass}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-dev-only-not-for-prod-change-me-min-32-bytes}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-dev-only-aes-key-32-bytes-XXXXXX!}
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:2775:2775"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 45s
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

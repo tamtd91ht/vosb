@@ -18,7 +18,7 @@ Khi cần >5000 msg/s/session: chuyển sang Cloudhopper (xem ADR mới khi đó
 
 ## 2. Listener bootstrap
 
-`smpp-server/src/main/java/vn/vihat/smpp/server/smpp/SmppServerConfig.java`:
+`smpp-server/src/main/java/com/smpp/server/smpp/SmppServerConfig.java`:
 
 ```java
 @Configuration

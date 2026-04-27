@@ -49,10 +49,14 @@ Forward message tới REST API của 3rd-party (vd Esms, Stringee, các aggregat
 
 ### 1.3 Flow
 
+Worker không expose HTTP server, nên có thể chọn **Vert.x `WebClient`** (async, reuse Vertx instance) hoặc **JDK `java.net.http.HttpClient`** (sync API, đơn giản, không kéo dependency). Vì dispatcher gọi từ AMQP listener thread (đã off event loop), cả hai đều hợp lệ. Mẫu dưới dùng JDK HttpClient để code đồng bộ trong listener:
+
 ```java
 @Component
 public class HttpThirdPartyDispatcher implements ChannelDispatcher {
-    private final WebClient webClient;   // shared, reactive HTTP client
+    private final HttpClient http = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
 
     @Override public ChannelType supportedType() { return ChannelType.HTTP_THIRD_PARTY; }
 
@@ -61,34 +65,35 @@ public class HttpThirdPartyDispatcher implements ChannelDispatcher {
         Config cfg = parse(ch.config());
         String body = render(cfg.bodyTemplate(), msg);
 
-        try {
-            ResponseEntity<String> resp = webClient.method(HttpMethod.valueOf(cfg.method()))
-                .uri(cfg.url())
-                .headers(h -> applyAuth(h, cfg))
-                .bodyValue(body)
-                .retrieve()
-                .toEntity(String.class)
-                .block(Duration.ofMillis(cfg.timeoutMs()));
+        HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(cfg.url()))
+            .timeout(Duration.ofMillis(cfg.timeoutMs()))
+            .method(cfg.method(), HttpRequest.BodyPublishers.ofString(body));
+        applyAuth(req, cfg);
+        cfg.headers().forEach(req::header);
 
-            int code = resp.getStatusCode().value();
+        try {
+            HttpResponse<String> resp = http.send(req.build(), HttpResponse.BodyHandlers.ofString());
+            int code = resp.statusCode();
             if (code >= 500) return new FailRetryable("HTTP_5XX", "code=" + code);
             if (code >= 400) return new FailFinal("HTTP_4XX", "code=" + code);
 
             // 2xx
-            String extId = jsonPath(resp.getBody(), cfg.responseIdPath());
-            String status = jsonPath(resp.getBody(), cfg.responseStatusPath());
+            String extId  = jsonPath(resp.body(), cfg.responseIdPath());
+            String status = jsonPath(resp.body(), cfg.responseStatusPath());
             if (cfg.responseStatusSuccessValues().contains(status.toLowerCase())) {
-                return new Success(extId, latencyMs);
+                return new Success(extId, /* latencyMs */ 0);
             }
             return new FailFinal("BAD_STATUS", "status=" + status);
-        } catch (TimeoutException e) {
+        } catch (HttpTimeoutException e) {
             return new FailRetryable("TIMEOUT", e.getMessage());
-        } catch (Exception e) {
+        } catch (IOException | InterruptedException e) {
             return new FailRetryable("HTTP_ERROR", e.getMessage());
         }
     }
 }
 ```
+
+**Cấm**: import `org.springframework.web.reactive.function.client.WebClient` hoặc `org.springframework.web.client.RestTemplate` — xem ADR-010 + `.claude/rules/vertx-rest.md`.
 
 ### 1.4 Auth modes
 

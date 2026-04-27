@@ -1,0 +1,34 @@
+# Build output
+target/
+*.jar
+*.war
+*.class
+
+# Maven Wrapper jar (only-script wrapper does not need it)
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+.springBeans
+.sts4-cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+*.env
+
+# Logs
+logs/
+*.log

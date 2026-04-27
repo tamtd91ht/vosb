@@ -1,6 +1,6 @@
 # REST API Spec
 
-3 nhóm endpoint, 3 SecurityFilterChain riêng. Tất cả response JSON. Error format **RFC 7807** (`application/problem+json`).
+3 nhóm endpoint, mount qua **Vert.x Web sub-router** riêng (mỗi router có `AuthenticationHandler` riêng — xem ADR-010 và `.claude/rules/vertx-rest.md`). Tất cả response JSON. Error format **RFC 7807** (`application/problem+json`) qua `failureHandler` chung.
 
 | Nhóm | Path prefix | Auth | Audience |
 |---|---|---|---|

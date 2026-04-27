@@ -67,34 +67,55 @@ Authentication: shared secret trong `channel.config`:
 }
 ```
 
-Handler trong smpp-server:
+Handler trong smpp-server (Vert.x Web — KHÔNG Spring MVC, xem ADR-010):
 ```java
-@RestController
-@RequestMapping("/api/internal/dlr")
-public class InternalDlrController {
-    @PostMapping("/{channelId}")
-    public ResponseEntity<Void> ingress(
-        @PathVariable long channelId,
-        @RequestBody String rawBody,
-        HttpServletRequest req
-    ) {
-        Channel ch = channelRepo.findById(channelId).orElseThrow();
-        verifyAuth(ch, req);   // header secret + IP allowlist
+@Component("internalRouter")
+public class InternalRouterFactory {
 
-        Map<String,Object> payload = json.readValue(rawBody, Map.class);
-        String extId = jsonPath(payload, ch.config().externalIdPath());
-        String status = jsonPath(payload, ch.config().statusPath());
+    private final Router router;
 
-        String state = mapStatus(status, ch.config());
-        DlrEvent evt = new DlrEvent(extId, state, jsonPath(payload, ch.config().errorCodePath()),
-                                    rawBody, "HTTP_WEBHOOK");
+    public InternalRouterFactory(Vertx vertx,
+                                 ChannelRepository channelRepo,
+                                 RabbitTemplate amqp,
+                                 ObjectMapper json,
+                                 ProblemJsonFailureHandler onFailure) {
+        this.router = Router.router(vertx);
+        router.post("/dlr/:channelId").handler(ctx -> ingress(ctx, channelRepo, amqp, json));
+        router.route().failureHandler(onFailure);
+    }
 
-        // Publish AMQP để worker xử lý đồng nhất với DLR khác
-        amqp.convertAndSend(Exchanges.SMS_DLR_INGRESS, "channel." + channelId, evt);
-        return ResponseEntity.ok().build();
+    @Bean("internalRouter")
+    public Router router() { return router; }
+
+    private void ingress(RoutingContext ctx,
+                         ChannelRepository channelRepo,
+                         RabbitTemplate amqp,
+                         ObjectMapper json) {
+        long channelId = Long.parseLong(ctx.pathParam("channelId"));
+        String rawBody = ctx.body().asString();
+
+        ctx.vertx().executeBlocking(() -> {
+            Channel ch = channelRepo.findById(channelId).orElseThrow();
+            verifyAuth(ch, ctx.request());          // header secret + IP allowlist
+
+            Map<String,Object> payload = json.readValue(rawBody, Map.class);
+            String extId  = jsonPath(payload, ch.config().externalIdPath());
+            String status = jsonPath(payload, ch.config().statusPath());
+
+            String state = mapStatus(status, ch.config());
+            DlrEvent evt = new DlrEvent(extId, state,
+                jsonPath(payload, ch.config().errorCodePath()), rawBody, "HTTP_WEBHOOK");
+
+            // Publish AMQP để worker xử lý đồng nhất với DLR khác
+            amqp.convertAndSend(Exchanges.SMS_DLR_INGRESS, "channel." + channelId, evt);
+            return null;
+        }).onSuccess(v -> ctx.response().setStatusCode(204).end())
+          .onFailure(ctx::fail);
     }
 }
 ```
+
+Router này được mount tại `/api/internal/*` bởi `VertxConfig` — endpoint cuối cùng là `POST /api/internal/dlr/{channelId}`.
 
 Lý do publish AMQP thay vì xử lý trực tiếp: để DLR pipeline thống nhất (cũng từ telco). Worker consume `sms.dlr.ingress.q`.
 
@@ -251,32 +272,37 @@ Map state → SMPP DLR status text:
 
 ## 5. Webhook sender + retry
 
-`WebhookSender`:
+`WebhookSender` — outbound HTTP dùng **Vert.x WebClient**, KHÔNG Spring `RestTemplate`/`WebClient` (xem ADR-010):
 
 ```java
 @Component
 public class WebhookSender {
-    private final WebClient webClient;
+    private final WebClient webClient;        // io.vertx.ext.web.client.WebClient
     private final RabbitTemplate amqp;
+    private final ObjectMapper json;
+
+    public WebhookSender(Vertx vertx, RabbitTemplate amqp, ObjectMapper json) {
+        this.webClient = WebClient.create(vertx, new WebClientOptions().setConnectTimeout(5_000));
+        this.amqp = amqp;
+        this.json = json;
+    }
 
     public void sendDlr(String url, DlrForwardEvent evt) {
         sendWithRetry(url, evt, 0);
     }
 
     private void sendWithRetry(String url, DlrForwardEvent evt, int attempt) {
-        try {
-            ResponseEntity<String> resp = webClient.post()
-                .uri(url)
-                .header("X-Webhook-Type", "DLR")
-                .bodyValue(evt)
-                .retrieve()
-                .toEntity(String.class)
-                .block(Duration.ofSeconds(10));
-            if (resp.getStatusCode().is2xxSuccessful()) return;
-            scheduleRetry(url, evt, attempt);
-        } catch (Exception e) {
-            scheduleRetry(url, evt, attempt);
-        }
+        Buffer body = Buffer.buffer(json.writeValueAsBytes(evt));
+        webClient.postAbs(url)
+            .timeout(10_000)
+            .putHeader("X-Webhook-Type", "DLR")
+            .putHeader("Content-Type", "application/json")
+            .sendBuffer(body)
+            .onSuccess(resp -> {
+                if (resp.statusCode() >= 200 && resp.statusCode() < 300) return;
+                scheduleRetry(url, evt, attempt);
+            })
+            .onFailure(err -> scheduleRetry(url, evt, attempt));
     }
 
     private void scheduleRetry(String url, DlrForwardEvent evt, int attempt) {

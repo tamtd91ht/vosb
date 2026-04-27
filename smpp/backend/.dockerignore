@@ -1,0 +1,39 @@
+# Build artifacts
+**/target/
+**/*.class
+**/*.jar.original
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+
+# Git / docs
+.git/
+.gitignore
+**/*.md
+
+# Docker / compose self
+Dockerfile
+**/Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+*.env
+
+# Logs
+logs/
+*.log

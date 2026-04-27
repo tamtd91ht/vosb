@@ -1,21 +1,20 @@
 # Backend — Spring Boot 3 + jSMPP
 
-Backend là Gradle multi-module repo gồm 3 module: `core`, `smpp-server`, `worker`.
+Backend là Maven multi-module repo gồm 3 module: `core`, `smpp-server`, `worker`.
 
 ---
 
-## 1. Gradle multi-module layout
+## 1. Maven multi-module layout
 
 ```
 smpp/backend/
-├── settings.gradle.kts                # rootProject + include 3 modules
-├── build.gradle.kts                   # common config: java 21, repositories
-├── gradle/
-│   └── libs.versions.toml             # version catalog (jsmpp, esl, spring-boot, ...)
+├── pom.xml                            # parent POM (packaging=pom): <modules> + <dependencyManagement>
+├── mvnw, mvnw.cmd                     # Maven Wrapper (UNIX/Windows)
+├── .mvn/wrapper/                      # maven-wrapper.properties
 ├── core/                              # plain library jar, KHÔNG có @SpringBootApplication
-│   ├── build.gradle.kts
+│   ├── pom.xml                        # <packaging>jar</packaging> — KHÔNG repackage Spring Boot
 │   └── src/main/
-│       ├── java/vn/vihat/smpp/core/
+│       ├── java/com/smpp/core/
 │       │   ├── domain/                # @Entity Partner, Channel, Route, Message, Dlr, ...
 │       │   ├── repository/            # Spring Data JPA interface
 │       │   ├── dto/                   # DTO chia sẻ giữa smpp-server và worker
@@ -25,24 +24,30 @@ smpp/backend/
 │       └── resources/
 │           └── db/migration/          # Flyway V1__init.sql, V2__..., V3__...
 ├── smpp-server/                       # Spring Boot app, có @SpringBootApplication
-│   ├── build.gradle.kts               # implementation(project(":core"))
+│   ├── pom.xml                        # depends on `core` + spring-boot-maven-plugin (repackage)
 │   ├── Dockerfile                     # multi-stage Java 21
 │   └── src/main/
-│       ├── java/vn/vihat/smpp/server/
+│       ├── java/com/smpp/server/
 │       │   ├── ServerApplication.java
-│       │   ├── smpp/                  # jSMPP listener
-│       │   ├── api/{partner,admin,portal}/
-│       │   ├── auth/                  # 3 SecurityFilterChain (partner, admin, portal)
+│       │   ├── smpp/                  # jSMPP listener (port 2775)
+│       │   ├── config/VertxConfig.java # @Bean Vertx, HttpServer, root Router (port 8080)
+│       │   ├── http/                   # Vert.x handlers (KHÔNG Spring MVC)
+│       │   │   ├── partner/           # /api/v1/* router factory + handlers
+│       │   │   ├── admin/             # /api/admin/* router factory + handlers
+│       │   │   ├── portal/            # /api/portal/* router factory + handlers
+│       │   │   ├── internal/          # /api/internal/* (DLR webhook, ...)
+│       │   │   ├── auth/              # ApiKeyHmacAuthHandler, JwtAuthHandler (Vert.x)
+│       │   │   └── error/             # ProblemJsonFailureHandler (RFC 7807)
 │       │   ├── inbound/               # MessagePublisher (publish sms.inbound)
 │       │   └── outbound/              # DlrForwarder (consume sms.dlr)
 │       └── resources/
 │           ├── application.yml
 │           └── application-prod.yml
 ├── worker/                            # Spring Boot app, web=none
-│   ├── build.gradle.kts
+│   ├── pom.xml                        # depends on `core` + spring-boot-maven-plugin
 │   ├── Dockerfile
 │   └── src/main/
-│       ├── java/vn/vihat/smpp/worker/
+│       ├── java/com/smpp/worker/
 │       │   ├── WorkerApplication.java
 │       │   ├── inbound/               # SmsInboundConsumer
 │       │   ├── route/                 # RouteResolver, RouteCache
@@ -145,40 +150,69 @@ public class SmppServerConfig {
 
 Chi tiết đầy đủ: `smpp-protocol.md`.
 
-### 3.3 HTTP API — 3 SecurityFilterChain riêng
+### 3.3 HTTP API — Vert.x Web (KHÔNG Spring MVC)
 
-Spring Security 6 cho phép nhiều `SecurityFilterChain` với `@Order` khác nhau, match path khác nhau:
+Quyết định: REST layer dùng **Vert.x Web**, Spring Boot chỉ giữ vòng đời/DI/config (xem **ADR-010** + `.claude/rules/vertx-rest.md`).
+
+`config/VertxConfig.java` — sở hữu `Vertx`, `HttpServer`, root `Router`. 4 sub-router (`partnerRouter`, `adminRouter`, `portalRouter`, `internalRouter`) là `@Component` factory expose `Router` bean, được mount theo path prefix:
 
 ```java
 @Configuration
-public class SecurityConfig {
+public class VertxConfig {
 
-    @Bean
-    @Order(1)
-    SecurityFilterChain partnerApi(HttpSecurity http) {
-        http.securityMatcher("/api/v1/**")
-            .addFilterBefore(new ApiKeyHmacFilter(...), UsernamePasswordAuthenticationFilter.class)
-            .csrf(c -> c.disable())
-            .sessionManagement(s -> s.sessionCreationPolicy(STATELESS));
-        return http.build();
+    @Bean(destroyMethod = "close")
+    public Vertx vertx() {
+        return Vertx.vertx();
     }
 
     @Bean
-    @Order(2)
-    SecurityFilterChain adminApi(HttpSecurity http) {
-        http.securityMatcher("/api/admin/**")
-            .addFilterBefore(new JwtAuthFilter(...), UsernamePasswordAuthenticationFilter.class)
-            .authorizeHttpRequests(a -> a
-                .requestMatchers("/api/admin/auth/login").permitAll()
-                .anyRequest().hasRole("ADMIN"));
-        return http.build();
+    public Router rootRouter(Vertx vertx,
+                             @Qualifier("partnerRouter")  Router partner,
+                             @Qualifier("adminRouter")    Router admin,
+                             @Qualifier("portalRouter")   Router portal,
+                             @Qualifier("internalRouter") Router internal) {
+        Router root = Router.router(vertx);
+        root.route().handler(BodyHandler.create());
+        root.route("/api/v1/*").subRouter(partner);
+        root.route("/api/admin/*").subRouter(admin);
+        root.route("/api/portal/*").subRouter(portal);
+        root.route("/api/internal/*").subRouter(internal);
+        return root;
     }
 
-    @Bean
-    @Order(3)
-    SecurityFilterChain portalApi(HttpSecurity http) { /* role PARTNER */ }
+    @Bean(destroyMethod = "close")
+    public HttpServer httpServer(Vertx vertx, Router root,
+                                 @Value("${app.http.port:8080}") int port) {
+        HttpServer server = vertx.createHttpServer().requestHandler(root);
+        server.listen(port).toCompletionStage().toCompletableFuture().join();
+        return server;
+    }
 }
 ```
+
+Auth handler (Vert.x `AuthenticationHandler`) gắn ở từng sub-router:
+
+```java
+@Component("partnerRouter")
+public class PartnerRouterFactory {
+    public PartnerRouterFactory(Vertx vertx,
+                                ApiKeyHmacAuthHandler hmacAuth,
+                                MessagesHandler messages,
+                                ProblemJsonFailureHandler onFailure) {
+        Router r = Router.router(vertx);
+        r.route().handler(hmacAuth);                         // 401 nếu fail
+        r.post("/messages").handler(messages::create);
+        r.get("/messages/:id").handler(messages::getById);
+        r.route().failureHandler(onFailure);
+        this.router = r;
+    }
+    @Bean("partnerRouter") public Router router() { return router; }
+}
+```
+
+Blocking call (JPA, JDBC, jSMPP submit) phải chạy qua `vertx.executeBlocking(...)` hoặc inject `@Service` chạy trên thread-pool riêng — KHÔNG block event loop.
+
+Actuator chạy ở port phụ qua **Jetty embedded** (`management.server.port=8081`, loopback only) để không lẫn với Vert.x HTTP server. Nginx KHÔNG forward 8081 ra public.
 
 Endpoint chi tiết → `api.md`.
 
@@ -308,35 +342,149 @@ Chi tiết đầy đủ → `dlr-flow.md`.
 
 ## 5. Dependencies chính
 
-`gradle/libs.versions.toml`:
+Parent POM (`smpp/backend/pom.xml`) inherit `spring-boot-starter-parent` để hưởng dependency-management Spring Boot, chỉ khai báo thêm version cho lib bên thứ ba (jSMPP, ESL, JJWT). Spring Boot starters/Postgres/Flyway lấy version từ BOM của parent.
 
-```toml
-[versions]
-java = "21"
-spring-boot = "3.3.0"
-jsmpp = "3.0.0"
-esl-client = "0.9.2"
-flyway = "10.14.0"
-postgresql = "42.7.3"
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
 
-[libraries]
-spring-boot-starter            = { module = "org.springframework.boot:spring-boot-starter", version.ref = "spring-boot" }
-spring-boot-starter-web        = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
-spring-boot-starter-data-jpa   = { module = "org.springframework.boot:spring-boot-starter-data-jpa", version.ref = "spring-boot" }
-spring-boot-starter-amqp       = { module = "org.springframework.boot:spring-boot-starter-amqp", version.ref = "spring-boot" }
-spring-boot-starter-data-redis = { module = "org.springframework.boot:spring-boot-starter-data-redis", version.ref = "spring-boot" }
-spring-boot-starter-security   = { module = "org.springframework.boot:spring-boot-starter-security", version.ref = "spring-boot" }
-spring-boot-starter-actuator   = { module = "org.springframework.boot:spring-boot-starter-actuator", version.ref = "spring-boot" }
-spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation", version.ref = "spring-boot" }
-flyway-core                    = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
-flyway-postgresql              = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
-postgresql                     = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
-jsmpp                          = { module = "org.jsmpp:jsmpp", version.ref = "jsmpp" }
-esl-client                     = { module = "link.thingscloud:freeswitch-esl-client", version.ref = "esl-client" }
-jjwt-api                       = { module = "io.jsonwebtoken:jjwt-api", version = "0.12.6" }
-jjwt-impl                      = { module = "io.jsonwebtoken:jjwt-impl", version = "0.12.6" }
-jjwt-jackson                   = { module = "io.jsonwebtoken:jjwt-jackson", version = "0.12.6" }
-spring-security-crypto         = { module = "org.springframework.security:spring-security-crypto" }
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.0</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.smpp</groupId>
+    <artifactId>smpp-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>core</module>
+        <module>smpp-server</module>
+        <module>worker</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <vertx.version>4.5.10</vertx.version>
+        <jsmpp.version>3.0.0</jsmpp.version>
+        <esl-client.version>0.9.2</esl-client.version>
+        <jjwt.version>0.12.6</jjwt.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-stack-depchain</artifactId>
+                <version>${vertx.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.smpp</groupId>
+                <artifactId>core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jsmpp</groupId>
+                <artifactId>jsmpp</artifactId>
+                <version>${jsmpp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>link.thingscloud</groupId>
+                <artifactId>freeswitch-esl-client</artifactId>
+                <version>${esl-client.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
+```
+
+Module `smpp-server/pom.xml` (rút gọn) — depend `core` + Spring Boot starters cần dùng + apply plugin `repackage`:
+
+```xml
+<project>
+    <parent>
+        <groupId>com.smpp</groupId>
+        <artifactId>smpp-backend</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>smpp-server</artifactId>
+
+    <dependencies>
+        <dependency><groupId>com.smpp</groupId><artifactId>core</artifactId></dependency>
+        <!-- Spring Boot: bootstrap + DI + lifecycle. KHÔNG starter-web (xem ADR-010). -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-jpa</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-amqp</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
+        <!-- Actuator chạy ở port phụ 8081 qua Jetty (loopback). -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-jetty</artifactId></dependency>
+        <!-- HTTP/REST = Vert.x Web. Auth/handler tự viết, KHÔNG dùng Spring Security filter. -->
+        <dependency><groupId>io.vertx</groupId><artifactId>vertx-core</artifactId></dependency>
+        <dependency><groupId>io.vertx</groupId><artifactId>vertx-web</artifactId></dependency>
+        <dependency><groupId>io.vertx</groupId><artifactId>vertx-web-validation</artifactId></dependency>
+        <dependency><groupId>io.vertx</groupId><artifactId>vertx-web-client</artifactId></dependency>
+        <dependency><groupId>io.vertx</groupId><artifactId>vertx-auth-jwt</artifactId></dependency>
+        <!-- Password hashing (bcrypt) — gọn, không cần kéo Spring Security đầy đủ. -->
+        <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-crypto</artifactId></dependency>
+        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
+        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
+        <dependency><groupId>org.jsmpp</groupId><artifactId>jsmpp</artifactId></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-api</artifactId></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-impl</artifactId><scope>runtime</scope></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-jackson</artifactId><scope>runtime</scope></dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+Module `worker/pom.xml` tương tự nhưng **không cần Vert.x Web** (worker không expose HTTP server). Outbound HTTP gọi 3rd-party dùng `vertx-web-client` HOẶC `java.net.http.HttpClient` (JDK 21). Thêm `link.thingscloud:freeswitch-esl-client` cho ESL.
+
+Module `core/pom.xml` chỉ là library jar — **KHÔNG** apply `spring-boot-maven-plugin` (tránh executable jar):
+
+```xml
+<project>
+    <parent>...smpp-backend...</parent>
+    <artifactId>core</artifactId>
+    <packaging>jar</packaging>
+    <dependencies>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-jpa</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-amqp</artifactId></dependency>
+        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
+    </dependencies>
+</project>
 ```
 
 ---
@@ -347,13 +495,20 @@ spring-security-crypto         = { module = "org.springframework.security:spring
 # syntax=docker/dockerfile:1.6
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /workspace
-COPY . .
-RUN --mount=type=cache,target=/root/.gradle ./gradlew :smpp-server:bootJar -x test
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+COPY core/pom.xml core/
+COPY smpp-server/pom.xml smpp-server/
+COPY worker/pom.xml worker/
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -pl smpp-server -am dependency:go-offline
+COPY core/src core/src
+COPY smpp-server/src smpp-server/src
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -pl smpp-server -am package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN apk add --no-cache curl tini
-COPY --from=build /workspace/smpp-server/build/libs/*.jar app.jar
+COPY --from=build /workspace/smpp-server/target/*.jar app.jar
 EXPOSE 8080 2775
 ENTRYPOINT ["/sbin/tini", "--", "java", "-jar", "/app/app.jar"]
 HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=3 \

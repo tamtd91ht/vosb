@@ -14,21 +14,21 @@ Quy ước:
 **Goal**: Có 2 Spring Boot app trống chạy được, kết nối được Postgres/Redis/RabbitMQ trong Docker local.
 
 **File chính**:
-- `smpp/backend/settings.gradle.kts` — include `core`, `smpp-server`, `worker`
-- `smpp/backend/build.gradle.kts` — version catalog, plugins
-- `smpp/backend/gradle/libs.versions.toml`
-- `smpp/backend/core/src/main/java/vn/vihat/smpp/core/config/{DataSourceConfig,RedisConfig,AmqpConfig}.java`
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/ServerApplication.java`
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/WorkerApplication.java`
+- `smpp/backend/pom.xml` — parent POM, `<modules>` include `core`, `smpp-server`, `worker`, `<dependencyManagement>` versions
+- `smpp/backend/{core,smpp-server,worker}/pom.xml` — module POM
+- `smpp/backend/mvnw`, `smpp/backend/mvnw.cmd`, `smpp/backend/.mvn/wrapper/maven-wrapper.properties` — Maven Wrapper
+- `smpp/backend/core/src/main/java/com/smpp/core/config/{DataSourceConfig,RedisConfig,AmqpConfig}.java`
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/ServerApplication.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/WorkerApplication.java`
 - `smpp/backend/{smpp-server,worker}/src/main/resources/application.yml`
 - `smpp/backend/{smpp-server,worker}/Dockerfile`
 - `smpp/backend/docker-compose.yml` (cho local dev infra)
 
 **DoD**:
-- `./gradlew build` xanh.
+- `./mvnw -B verify` xanh.
 - `docker compose up -d` (local infra) → 3 service healthy.
-- `./gradlew :smpp-server:bootRun` log "Started ServerApplication", actuator `/actuator/health` 200 với `db`, `redis`, `rabbit` UP.
-- `./gradlew :worker:bootRun` log "Started WorkerApplication", actuator UP.
+- `./mvnw -pl smpp-server -am spring-boot:run` log "Started ServerApplication", actuator `/actuator/health` 200 với `db`, `redis`, `rabbit` UP.
+- `./mvnw -pl worker -am spring-boot:run` log "Started WorkerApplication", actuator UP.
 
 **Smoke test**:
 ```bash
@@ -46,10 +46,10 @@ curl http://localhost:8080/actuator/health/readiness
 
 **File chính**:
 - `smpp/backend/core/src/main/resources/db/migration/V1__init.sql` (toàn bộ 8 bảng — xem `data-model.md`)
-- `smpp/backend/core/src/main/java/vn/vihat/smpp/core/domain/*.java` (entity)
-- `smpp/backend/core/src/main/java/vn/vihat/smpp/core/repository/*.java`
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/auth/{JwtService,AdminAuthFilter,LoginController}.java`
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/api/admin/*Controller.java`
+- `smpp/backend/core/src/main/java/com/smpp/core/domain/*.java` (entity)
+- `smpp/backend/core/src/main/java/com/smpp/core/repository/*.java`
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/auth/{JwtService,AdminAuthFilter,LoginController}.java`
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/api/admin/*Controller.java`
 - `smpp/backend/smpp-server/src/main/resources/db/data/V900__seed_admin.sql` (admin user mặc định)
 
 **DoD**:
@@ -79,9 +79,9 @@ curl -X POST http://localhost:8080/api/admin/partners \
 **Goal**: Partner bind được vào port 2775, gửi `submit_sm` thành công, message lưu DB và đẩy vào RabbitMQ.
 
 **File chính**:
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/smpp/{SmppServerConfig,BindAuthenticator,MessageReceiverListenerImpl,SessionRegistry}.java`
-- `smpp/backend/core/src/main/java/vn/vihat/smpp/core/messaging/{Exchanges,Queues,RoutingKeys}.java`
-- `smpp/backend/core/src/main/java/vn/vihat/smpp/core/security/PasswordHasher.java`
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/smpp/{SmppServerConfig,BindAuthenticator,MessageReceiverListenerImpl,SessionRegistry}.java`
+- `smpp/backend/core/src/main/java/com/smpp/core/messaging/{Exchanges,Queues,RoutingKeys}.java`
+- `smpp/backend/core/src/main/java/com/smpp/core/security/PasswordHasher.java`
 
 **DoD**:
 - jSMPP listener bind port 2775.
@@ -110,10 +110,10 @@ smppcli bind transceiver -h localhost -p 2775 -u test -P testpass
 **Goal**: Partner gọi `POST /api/v1/messages` với HMAC signing, message vào pipeline tương đương SMPP.
 
 **File chính**:
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/auth/{ApiKeyFilter,SignatureVerifier}.java`
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/api/partner/MessagesController.java`
-- `smpp/backend/core/src/main/java/vn/vihat/smpp/core/security/HmacSigner.java`
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/inbound/MessagePublisher.java` (refactor từ phase 3)
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/auth/{ApiKeyFilter,SignatureVerifier}.java`
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/api/partner/MessagesController.java`
+- `smpp/backend/core/src/main/java/com/smpp/core/security/HmacSigner.java`
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/inbound/MessagePublisher.java` (refactor từ phase 3)
 
 **DoD**:
 - API key tạo qua `/api/admin/partners/{id}/keys` (trả secret 1 lần duy nhất).
@@ -143,10 +143,10 @@ curl -X POST http://localhost:8080/api/v1/messages \
 **Goal**: Worker consume `sms.inbound`, route theo partner+prefix, dispatch tới 1 channel HTTP_THIRD_PARTY (mock httpbin).
 
 **File chính**:
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/inbound/SmsInboundConsumer.java`
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/route/{RouteResolver,RouteCache}.java`
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/dispatch/{ChannelDispatcher,HttpThirdPartyDispatcher}.java`
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/client/Http3rdPartyClient.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/inbound/SmsInboundConsumer.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/route/{RouteResolver,RouteCache}.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/dispatch/{ChannelDispatcher,HttpThirdPartyDispatcher}.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/client/Http3rdPartyClient.java`
 
 **DoD**:
 - Cấu hình channel HTTP_THIRD_PARTY trỏ tới `https://httpbin.org/post`.
@@ -172,10 +172,10 @@ curl -X POST http://localhost:8080/api/v1/messages \
 **Goal**: Vòng tròn DLR đầy đủ qua channel telco SMPP.
 
 **File chính**:
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/dispatch/TelcoSmppDispatcher.java`
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/client/{TelcoSmppSessionPool,TelcoSmppSession}.java`
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/dlr/DlrIngressHandler.java`
-- `smpp/backend/smpp-server/src/main/java/vn/vihat/smpp/server/outbound/DlrForwarder.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/dispatch/TelcoSmppDispatcher.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/client/{TelcoSmppSessionPool,TelcoSmppSession}.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/dlr/DlrIngressHandler.java`
+- `smpp/backend/smpp-server/src/main/java/com/smpp/server/outbound/DlrForwarder.java`
 
 **DoD**:
 - Channel TELCO_SMPP với host = local `smppsim` (Docker compose dev profile).
@@ -200,8 +200,8 @@ curl -X POST http://localhost:8080/api/v1/messages \
 **Goal**: Channel FREESWITCH_ESL hoạt động: route message → originate call → playback OTP digit → mark state theo hangup cause.
 
 **File chính**:
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/dispatch/FreeSwitchEslDispatcher.java`
-- `smpp/backend/worker/src/main/java/vn/vihat/smpp/worker/client/{EslClientPool,EslEventHandler}.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/dispatch/FreeSwitchEslDispatcher.java`
+- `smpp/backend/worker/src/main/java/com/smpp/worker/client/{EslClientPool,EslEventHandler}.java`
 
 **DoD**:
 - Channel FREESWITCH_ESL config `host`, `port`, `password`, `dialplan_template`.
