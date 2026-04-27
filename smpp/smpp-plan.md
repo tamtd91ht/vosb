@@ -13,10 +13,9 @@
 
 - **Repo state**: Maven multi-module backend (`com.smpp` groupId, package `com.smpp.*`), 1 commit `init` + tất cả T01-T05 chưa commit (làm lúc nào tuỳ user).
 - **Build hiện tại**: `./mvnw -B clean package -DskipTests` xanh, 4 modules `smpp-backend / core / smpp-server / worker`. Image `smpp-server:dev` đã build trong Docker.
-- **Stack chạy** (T05): docker-compose `smpp-dev` 4 container healthy:
-  - `smpp-postgres` (`127.0.0.1:5432`), `smpp-redis` (`127.0.0.1:6379`), `smpp-rabbitmq` (`127.0.0.1:5672` + mgmt `:15672`)
-  - `smpp-server` (`127.0.0.1:8080` HTTP, `127.0.0.1:2775` SMPP placeholder).
-- **Endpoint sống**: `GET /healthz` (DB+Redis+Rabbit), `GET /readyz`, `GET /api/v1/ping`. 4 sub-router skeleton (partner/admin/portal/internal) — chưa có handler nào ngoài ping. 404 RFC 7807 cho path không match.
+- **Compose scope** (sau khi user fix): `smpp/backend/docker-compose.yml` **chỉ có `smpp-server`**, join external network `infra-net`. Hạ tầng chạy compose riêng (đã quy hoạch tách từ đầu — prod ở `~/apps/infrastructure/` trên VPS).
+- **Local dev infra (orphan)**: 3 container `smpp-postgres / smpp-redis / smpp-rabbitmq` của T05 cũ vẫn chạy trên `smpp-dev_default` network, bind `127.0.0.1:5432/6379/5672`. KHÔNG còn được quản lý bởi compose nào — coi như "infra compose riêng" tạm cho dev. Volumes `smpp-dev_postgres_data` / `smpp-dev_redis_data` / `smpp-dev_rabbitmq_data` giữ data.
+- **Endpoint sống** (chạy local qua `java -jar` hoặc `mvnw spring-boot:run` — KHÔNG qua docker-compose locally): `GET /healthz` (DB+Redis+Rabbit qua `localhost`), `GET /readyz`, `GET /api/v1/ping`. 4 sub-router skeleton.
 
 ### Quick verify (chạy lại nếu nghi state lệch)
 
@@ -24,17 +23,21 @@
 # 1. Maven build
 JAVA_HOME="C:/Program Files/Java/jdk-21.0.11" ./mvnw -B clean package -DskipTests
 
-# 2. Infra + container
-docker compose --profile app up -d
-docker compose ps   # 4 healthy
+# 2. Infra orphan (3 container T05) đang chạy?
+docker ps --filter "name=smpp-postgres|smpp-redis|smpp-rabbitmq"
+# Nếu stopped: docker start smpp-postgres smpp-redis smpp-rabbitmq
 
-# 3. Endpoint
+# 3. Run app local qua mvn (KHÔNG qua compose) — kết nối localhost:5432/6379/5672
+JAVA_HOME="C:/Program Files/Java/jdk-21.0.11" java -jar smpp-server/target/smpp-server-0.1.0-SNAPSHOT.jar &
+
+# 4. Endpoint
 curl -fsS http://localhost:8080/healthz       # 200 {db:UP,redis:UP,rabbit:UP}
 curl -fsS http://localhost:8080/api/v1/ping   # 200 {"pong":true}
 curl -i    http://localhost:8080/api/x         # 404 application/problem+json
 
-# 4. Stop without losing data
-docker compose --profile app down              # giữ volume
+# Prod deploy (Phase 10) — KHÔNG dùng locally:
+#   docker compose build smpp-server && docker compose up -d
+#   (yêu cầu network `infra-net` + .env có secrets)
 ```
 
 ### Environment quirks (đã gặp + cách xử lý)
@@ -111,11 +114,12 @@ Bắt đầu T06 hoặc T08 (security primitives) song song được.
   - DoD: ping 200 ✓; healthz 503 với `{db:DOWN,redis:DOWN,rabbit:DOWN}` (Docker chưa up) ✓; readyz 200 `{ready:true}` ✓; /api/x 404 `application/problem+json` ✓.
   - Note: VertxConfig đánh dấu `@Lazy(false)` để override `spring.main.lazy-initialization=true` — HttpServer phải start ngay khi context up. RouterFactory + HealthHandlers + FailureHandler eager transitively. Healthz dùng `vertx.executeBlocking(..., false)` chạy 3 ping song song trên worker pool.
 
-- [x] **T05** — Dockerfile multi-stage + `docker-compose.yml` dev infra ✅
-  - Files: `smpp-server/Dockerfile`, `smpp/backend/docker-compose.yml`, `.dockerignore`
+- [x] **T05** — Dockerfile multi-stage + `docker-compose.yml` (app-only) + `.env.example` ✅
+  - Files: `smpp-server/Dockerfile`, `smpp/backend/docker-compose.yml`, `.dockerignore`, `.env.example`
   - Size: M | Depends: T04
-  - DoD: `docker compose up -d` 3/3 healthy ✓; `docker build` → image `smpp-server:dev` ✓; container healthz UP với `{db:UP,redis:UP,rabbit:UP,status:UP}` HTTP 200 ✓.
-  - Note: UID 1001 (không phải 1000 — eclipse-temurin Ubuntu base đã có ubuntu/uid=1000). Profile `app` để start container app riêng (`docker compose --profile app up -d --build`). Mọi port bind `127.0.0.1:*` (không expose LAN).
+  - DoD: image `smpp-server:dev` build xanh ✓; container app chạy + healthz `{db:UP,...}` HTTP 200 (verified với 4-service infra trước khi user yêu cầu rewrite) ✓; compose validate sạch ✓.
+  - **Scope đã chốt sau khi rewrite**: compose này **chỉ có service `smpp-server`** join external network `infra-net`. Hạ tầng (Postgres/Redis/RabbitMQ) chạy compose riêng (đã quy hoạch tách từ đầu — prod ở `~/apps/infrastructure/`). 3 infra container của T05 đầu vẫn chạy local (orphan, dùng cho `mvnw spring-boot:run`).
+  - Note: UID 1001 (eclipse-temurin Ubuntu base đã có ubuntu/uid=1000). Prereqs cho `docker compose up`: (a) network `infra-net` đã tồn tại, (b) `.env` có secrets, (c) infra container DNS name = `${DB_HOST}/${REDIS_HOST}/${RABBITMQ_HOST}`.
 
 🏷 **M1 Done — tag `v0.1-phase-1`**
 
