@@ -25,6 +25,9 @@
         <!-- jSMPP: outbound SMPP client to telco SMSC (TelcoSmppDispatcher). -->
         <dependency><groupId>org.jsmpp</groupId><artifactId>jsmpp</artifactId></dependency>
 
+        <!-- FreeSWITCH ESL inbound client for VOICE_OTP via FreeSwitchEslDispatcher. -->
+        <dependency><groupId>link.thingscloud</groupId><artifactId>freeswitch-esl</artifactId></dependency>
+
         <!-- Test -->
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>

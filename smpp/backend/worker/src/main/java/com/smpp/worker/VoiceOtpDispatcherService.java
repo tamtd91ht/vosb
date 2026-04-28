@@ -2,9 +2,12 @@ package com.smpp.worker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smpp.core.domain.Channel;
+import com.smpp.worker.esl.FreeSwitchEslDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+
+import java.util.UUID;
 
 /**
  * Dispatches VOICE_OTP delivery to the appropriate provider caller
@@ -18,12 +21,15 @@ public class VoiceOtpDispatcherService {
     public record DispatchResult(boolean success, String providerMessageId, String error) {}
 
     private final TwoMobileVoiceCaller twoMobileCaller;
+    private final FreeSwitchEslDispatcher eslDispatcher;
 
-    public VoiceOtpDispatcherService(TwoMobileVoiceCaller twoMobileCaller) {
+    public VoiceOtpDispatcherService(TwoMobileVoiceCaller twoMobileCaller,
+                                     FreeSwitchEslDispatcher eslDispatcher) {
         this.twoMobileCaller = twoMobileCaller;
+        this.eslDispatcher = eslDispatcher;
     }
 
-    public DispatchResult dispatch(Channel channel, String destAddr, String content) {
+    public DispatchResult dispatch(Channel channel, String destAddr, String content, UUID messageId) {
         JsonNode config = channel.getConfig();
         String providerCode = config.path("provider_code").asText("");
 
@@ -31,6 +37,7 @@ public class VoiceOtpDispatcherService {
 
         return switch (providerCode) {
             case "2TMOBILE_VOICE" -> dispatchTwoMobile(config, destAddr, content);
+            case "FREESWITCH_ESL" -> dispatchEsl(channel, destAddr, content, messageId);
             default -> {
                 log.error("Unsupported Voice OTP provider: {}", providerCode);
                 yield new DispatchResult(false, null, "Unsupported provider: " + providerCode);
@@ -56,5 +63,10 @@ public class VoiceOtpDispatcherService {
             log.warn("2T-Mobile call failed: {}", error);
             return new DispatchResult(false, null, error);
         }
+    }
+
+    private DispatchResult dispatchEsl(Channel channel, String destAddr, String content, UUID messageId) {
+        FreeSwitchEslDispatcher.DispatchResult r = eslDispatcher.dispatch(channel, destAddr, content, messageId);
+        return new DispatchResult(r.success(), r.uuid(), r.error());
     }
 }

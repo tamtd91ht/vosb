@@ -75,7 +75,7 @@ public class InboundMessageConsumer {
 
     private void handleVoiceOtp(InboundMessageEvent event, Channel channel) {
         VoiceOtpDispatcherService.DispatchResult result =
-                voiceOtpDispatcher.dispatch(channel, event.destAddr(), event.content());
+                voiceOtpDispatcher.dispatch(channel, event.destAddr(), event.content(), event.messageId());
 
         if (result.success()) {
             messageRepo.updateStateAndTelcoId(
