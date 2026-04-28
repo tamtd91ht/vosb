@@ -1,4 +1,8 @@
 import { redirect } from "next/navigation";
-export default function Home() {
-  redirect("/admin/dashboard");
+import { auth } from "@/lib/auth";
+
+export default async function Home() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  redirect(session.user.role === "ADMIN" ? "/admin/dashboard" : "/portal/overview");
 }
