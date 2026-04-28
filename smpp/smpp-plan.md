@@ -7,7 +7,7 @@
 
 ## 🔁 Resume here for next session
 
-**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T26 ✅ + Provider/Pricing Addon ✅ + Luồng 1 ✅** — Phase 2–4 hoàn tất + SMS HTTP dispatch xong. Build `./mvnw -B package -DskipTests` 4 modules SUCCESS. Commit `8063dd4`.
+**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T26 ✅ + Provider/Pricing Addon ✅ + Luồng 1 ✅ + Luồng 2 ✅** — Phase 2–4 hoàn tất + SMS HTTP + SMPP telco dispatch xong. Build `./mvnw -B package -DskipTests` 4 modules SUCCESS. Commit `c799d5e`.
 
 ### Các luồng còn lại (next flows)
 
@@ -17,13 +17,12 @@
 - `CUSTOM` caller: template substitution (`${source_addr/dest_addr/content/message_id}`) + JSONPath response ID/status parsing.
 - Vietguys tự động chuyển E.164 `84...` → local `0...` format.
 
-**Luồng 2 — SMPP client tới telco** (TelcoSmppDispatcher, worker):
-- Worker bind ra telco SMSC như SMPP client (`SMPPSession` outbound).
-- Session pool `TelcoSmppSessionPool`: 1 pool per channel, auto-reconnect, enquire_link keep-alive.
-- Dispatch: `session.submitShortMessage(...)` → lấy `message_id` từ `submit_sm_resp` → lưu vào `message.message_id_telco`.
-- Telco gửi `deliver_sm` DLR về `SMPPSession.setMessageReceiverListener()` → worker normalize → POST `api/internal/dlr/{channelId}`.
-- `DlrForwarder` (smpp-server) đã sẵn sàng nhận từ RabbitMQ và forward về partner.
-- File cần tạo: `worker/.../TelcoSmppDispatcher.java`, `worker/.../TelcoSmppSessionPool.java`.
+**Luồng 2 — SMPP client tới telco** ✅ **DONE** (`2026-04-28`):
+- `TelcoSmppSessionPool`: load ACTIVE TELCO_SMPP channels on ApplicationReadyEvent → bind `SMPPSession` (BIND_TRX), enquire_link keep-alive, auto-reconnect via `SessionStateListener` + `ScheduledExecutorService`.
+- `TelcoSmppDispatcher`: `session.submitShortMessage(...)` → `SubmitSmResult.getMessageId()` → `SmsSendResult`.
+- `TelcoDlrProcessor`: `MessageReceiverListener.onAcceptDeliverSm` → parse `DeliveryReceipt` (jSMPP) + extract `err:` field → `@Transactional` save `Dlr` + update `message.state` + publish `DlrEvent` AMQP → `DlrForwarder` forward tới partner.
+- `SmsDispatcherService`: thêm `TELCO_SMPP` branch đầu tiên (trước HTTP provider switch).
+- Encoding hỗ trợ: GSM7 (ISO_8859_1 bytes, dataCoding 0x00) + UCS2 (UTF-16BE bytes, dataCoding 0x08).
 
 **Luồng 3 — FreeSWITCH ESL dispatcher** (voice OTP nội bộ):
 - `VoiceOtpDispatcherService` hiện chỉ hỗ trợ `2TMOBILE_VOICE` (HTTP).
@@ -50,7 +49,7 @@
 - **Build hiện tại**: `./mvnw -B clean package -DskipTests` xanh, 4 modules `smpp-backend / core / smpp-server / worker`. Image `smpp-server:dev` đã build trong Docker.
 - **Compose scope**: `smpp/backend/docker-compose.yml` **chỉ có `smpp-server`**, join external network `infra-net`. Hạ tầng chạy compose riêng.
 - **Local dev infra (orphan)**: 3 container `smpp-postgres / smpp-redis / smpp-rabbitmq` của T05 cũ vẫn chạy trên `smpp-dev_default` network, bind `127.0.0.1:5432/6379/5672`. Volumes `smpp-dev_postgres_data` / `smpp-dev_redis_data` / `smpp-dev_rabbitmq_data` giữ data.
-- **Endpoint sống** (chạy local qua `java -jar` — KHÔNG qua docker-compose locally, cần infra containers running): Toàn bộ admin API Phase 2–4: login/auth, partners/smpp-accounts/api-keys/channels/routes/rates/carriers/messages/sessions/stats/users, partner inbound API (`/api/v1/messages`), DLR ingress (`/api/internal/dlr/{channelId}`), portal 6 EP. Worker: consume `sms.inbound.q` → route → Voice OTP (2T-Mobile HTTP) + **SMS HTTP dispatch (SpeedSMS/eSMS/Vietguys/Abenla/Infobip/CUSTOM)**.
+- **Endpoint sống** (chạy local qua `java -jar` — KHÔNG qua docker-compose locally, cần infra containers running): Toàn bộ admin API Phase 2–4: login/auth, partners/smpp-accounts/api-keys/channels/routes/rates/carriers/messages/sessions/stats/users, partner inbound API (`/api/v1/messages`), DLR ingress (`/api/internal/dlr/{channelId}`), portal 6 EP. Worker: consume `sms.inbound.q` → route → Voice OTP (2T-Mobile HTTP) + SMS HTTP dispatch (SpeedSMS/eSMS/Vietguys/Abenla/Infobip/CUSTOM) + **SMPP telco dispatch (outbound SMPPSession per TELCO_SMPP channel)**.
 
 ### Quick verify (chạy lại nếu nghi state lệch)
 
