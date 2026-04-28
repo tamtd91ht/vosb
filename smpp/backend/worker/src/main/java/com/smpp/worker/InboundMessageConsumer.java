@@ -6,6 +6,7 @@ import com.smpp.core.domain.Channel;
 import com.smpp.core.domain.enums.DeliveryType;
 import com.smpp.core.domain.enums.MessageState;
 import com.smpp.core.repository.MessageRepository;
+import com.smpp.core.service.PartnerBalanceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -22,15 +23,21 @@ public class InboundMessageConsumer {
     private final VoiceOtpDispatcherService voiceOtpDispatcher;
     private final SmsDispatcherService smsDispatcher;
     private final MessageRepository messageRepo;
+    private final CarrierResolver carrierResolver;
+    private final PartnerBalanceService partnerBalanceService;
 
     public InboundMessageConsumer(RouteResolver routeResolver,
                                   VoiceOtpDispatcherService voiceOtpDispatcher,
                                   SmsDispatcherService smsDispatcher,
-                                  MessageRepository messageRepo) {
+                                  MessageRepository messageRepo,
+                                  CarrierResolver carrierResolver,
+                                  PartnerBalanceService partnerBalanceService) {
         this.routeResolver = routeResolver;
         this.voiceOtpDispatcher = voiceOtpDispatcher;
         this.smsDispatcher = smsDispatcher;
         this.messageRepo = messageRepo;
+        this.carrierResolver = carrierResolver;
+        this.partnerBalanceService = partnerBalanceService;
     }
 
     @RabbitListener(queues = AmqpConstants.SMS_INBOUND_QUEUE)
@@ -73,6 +80,7 @@ public class InboundMessageConsumer {
         if (result.success()) {
             messageRepo.updateStateAndTelcoId(
                     event.messageId(), MessageState.SUBMITTED, null, result.providerMessageId());
+            chargePartner(event, channel);
         } else {
             messageRepo.updateState(
                     event.messageId(), MessageState.FAILED, truncate(result.error(), 64));
@@ -86,9 +94,21 @@ public class InboundMessageConsumer {
         if (result.success()) {
             messageRepo.updateStateAndTelcoId(
                     event.messageId(), MessageState.SUBMITTED, null, result.providerMessageId());
+            chargePartner(event, channel);
         } else {
             messageRepo.updateState(
                     event.messageId(), MessageState.FAILED, truncate(result.error(), 64));
+        }
+    }
+
+    private void chargePartner(InboundMessageEvent event, Channel channel) {
+        try {
+            String carrier = carrierResolver.resolve(event.destAddr()).orElse(null);
+            partnerBalanceService.deductForMessage(
+                    event.messageId(), event.partnerId(),
+                    channel.getDeliveryType(), carrier, event.destAddr());
+        } catch (Exception e) {
+            log.error("Billing error for message {}: {}", event.messageId(), e.getMessage(), e);
         }
     }
 
