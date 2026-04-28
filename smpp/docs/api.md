@@ -51,9 +51,9 @@ curl -X POST https://gw.example.com/api/v1/messages \
 ### 1.2 Admin / Portal — Bearer JWT
 
 Login flow:
-- `POST /api/admin/auth/login` (cũng dùng cho portal, role được lookup từ DB) body `{ username, password }` → 200 `{ access_token, refresh_token, expires_in, role, partner_id? }`.
-- `POST /api/admin/auth/refresh` body `{ refresh_token }` → access_token mới.
-- `POST /api/admin/auth/logout` → revoke refresh_token (Redis blacklist).
+- `POST /api/admin/auth/login` (cũng dùng cho portal, role được lookup từ DB) body `{ username, password }` → 200 `{ token, refresh_token, expires_in }`.
+- `POST /api/admin/auth/refresh` body `{ refresh_token }` → token mới.
+- `POST /api/admin/auth/logout` → 204 (blacklist access jti trong Redis `jwt:bl:<jti>`).
 
 Authenticated request:
 - Header `Authorization: Bearer <access_token>`.
@@ -76,7 +76,7 @@ Request body:
   "encoding": "GSM7",                       // GSM7 | UCS2 | LATIN1, default GSM7
   "type": "SMS",                            // SMS | VOICE_OTP, default SMS
   "voice_otp_digits": "123456",             // bắt buộc nếu type=VOICE_OTP
-  "callback_url": "https://partner.example.com/dlr",  // optional, override partner.dlr_webhook_url
+  "callback_url": "https://partner.example.com/dlr",  // optional, override partner.dlr_webhook
   "client_ref": "partner-internal-id-1234"  // optional, partner-side ref, lưu trong message metadata
 }
 ```
@@ -149,71 +149,216 @@ Response 200:
 
 ### 3.1 Auth
 
-- `POST /api/admin/auth/login`
-- `POST /api/admin/auth/refresh`
-- `POST /api/admin/auth/logout`
-- `GET /api/admin/auth/me` → trả info user hiện tại
+**`POST /api/admin/auth/login`**
+
+Request:
+```json
+{ "username": "admin", "password": "Admin@123456" }
+```
+Response 200:
+```json
+{ "token": "eyJ...", "refresh_token": "eyJ...", "expires_in": 3600 }
+```
+Response 401: sai password hoặc user không tồn tại.
+
+Refresh token được lưu trong Redis key `jwt:refresh:<raw_refresh_token>` EX 30 ngày.
+
+---
+
+**`POST /api/admin/auth/refresh`**
+
+Request:
+```json
+{ "refresh_token": "eyJ..." }
+```
+Response 200:
+```json
+{ "token": "eyJ...", "expires_in": 3600 }
+```
+Response 401: refresh token không hợp lệ hoặc đã hết hạn.
+
+---
+
+**`POST /api/admin/auth/logout`** — yêu cầu Bearer token
+
+Response 204: blacklist access jti trong Redis `jwt:bl:<jti>` EX remaining_seconds.
+Response 401: không có hoặc token không hợp lệ.
+
+---
+
+**`GET /api/admin/auth/me`** — yêu cầu Bearer token
+
+Response 200:
+```json
+{ "id": 1, "username": "admin", "role": "ADMIN", "partner_id": null }
+```
+Response 401: thiếu hoặc sai Bearer.
 
 ### 3.2 Partner CRUD
 
-- `GET /api/admin/partners?page=&size=&search=`
-- `POST /api/admin/partners` body `{ code, name, dlr_webhook_url? }`
-- `GET /api/admin/partners/{id}`
-- `PATCH /api/admin/partners/{id}` body partial
-- `DELETE /api/admin/partners/{id}` (soft delete: set `status=DELETED` thay vì xóa thật)
+- `GET /api/admin/partners?page=0&size=20&status=` → 200 `{ items, total, page, size }`
+- `POST /api/admin/partners` body `{ code, name, dlr_webhook? }` → 201 | 400 | 409 (dup code)
+- `GET /api/admin/partners/:id` → 200 | 404
+- `PUT /api/admin/partners/:id` body `{ name?, status?, dlr_webhook? }` → 200 | 404
+- `DELETE /api/admin/partners/:id` → 204 (soft-delete: `status=SUSPENDED`, không xóa thật)
+
+`dlr_webhook` là object JSONB, **không phải** plain URL string:
+```json
+{ "url": "https://partner.example.com/dlr", "method": "POST", "headers": { "X-Secret": "abc" } }
+```
+
+Response PartnerResponse:
+```json
+{
+  "id": 1,
+  "code": "PARTNER_A",
+  "name": "Partner A",
+  "status": "ACTIVE",
+  "dlr_webhook": { "url": "...", "method": "POST", "headers": {} },
+  "balance": 0,
+  "created_at": "2026-04-28T00:00:00Z",
+  "updated_at": "2026-04-28T00:00:00Z"
+}
+```
 
 ### 3.3 Partner SMPP account
 
-- `GET /api/admin/partners/{id}/smpp-accounts`
-- `POST /api/admin/partners/{id}/smpp-accounts` body `{ system_id, password, max_binds?, ip_whitelist? }` — server bcrypt password trước khi save, response **không bao giờ** trả password.
-- `PATCH /api/admin/smpp-accounts/{id}` (đổi password, ip_whitelist, status)
-- `DELETE /api/admin/smpp-accounts/{id}`
+Tất cả endpoint đặt dưới path `/api/admin/partners/:partnerId/smpp-accounts`.
+
+- `POST /api/admin/partners/:partnerId/smpp-accounts` body `{ system_id, password, max_binds?, ip_whitelist? }` → 201 | 400 | 404 (partner not found) | 409 (dup system_id)
+- `GET /api/admin/partners/:partnerId/smpp-accounts` → 200 list
+- `GET /api/admin/partners/:partnerId/smpp-accounts/:id` → 200 | 404
+- `DELETE /api/admin/partners/:partnerId/smpp-accounts/:id` → 204 (soft-delete: `status=DISABLED`)
+
+Server bcrypt password trước khi save. Response **không bao giờ** trả password field:
+```json
+{
+  "id": 1,
+  "partner_id": 1,
+  "system_id": "partner_a",
+  "max_binds": 5,
+  "ip_whitelist": ["1.2.3.4"],
+  "status": "ACTIVE",
+  "created_at": "2026-04-28T00:00:00Z"
+}
+```
 
 ### 3.4 Partner API key
 
-- `GET /api/admin/partners/{id}/api-keys`
-- `POST /api/admin/partners/{id}/api-keys` body `{ label }` → **response duy nhất 1 lần** chứa plaintext secret:
-  ```json
-  { "key_id": "ak_live_xxxx", "secret": "sk_live_yyyyyyyy_chỉ_hiện_lần_này", "label": "..." }
-  ```
-- `POST /api/admin/api-keys/{id}/revoke`
+- `POST /api/admin/partners/:partnerId/api-keys` body `{ label? }` → 201 | 400 | 404
+- `GET /api/admin/partners/:partnerId/api-keys` → 200 list
+- `DELETE /api/admin/partners/:partnerId/api-keys/:id` → 204 (revoke: `status=REVOKED`)
+
+`POST` response — **raw_secret chỉ hiển thị 1 lần duy nhất** (sau đó không thể lấy lại):
+```json
+{ "key_id": "ak_live_aBcDeFgH1234", "raw_secret": "base64url_32_random_bytes", "label": "..." }
+```
+
+`key_id` format: `ak_live_<16 ký tự alphanumeric>`. `raw_secret` là base64url của 32 random bytes. Secret được lưu trong DB dưới dạng AES-GCM-256 encrypted (`secret_encrypted bytea` + `nonce bytea`).
+
+`GET` response list — không có secret field:
+```json
+[{ "id": 1, "key_id": "ak_live_...", "label": "...", "status": "ACTIVE", "last_used_at": null, "created_at": "..." }]
+```
 
 ### 3.5 Channel
 
-- `GET /api/admin/channels`
-- `POST /api/admin/channels` body `{ code, name, type, config }` — server validate `config` schema theo `type`.
-- `GET /api/admin/channels/{id}`
-- `PATCH /api/admin/channels/{id}`
-- `DELETE /api/admin/channels/{id}`
-- `POST /api/admin/channels/{id}/test` → ping kiểm tra (HTTP: HEAD url; SMPP: bind+unbind; ESL: connect+disconnect). Response: `{ ok: true, latency_ms: 125 }` hoặc error.
+- `GET /api/admin/channels?type=&status=&page=&size=` → 200 `{ items, total, page, size }`
+- `POST /api/admin/channels` body `{ code, name, type, config }` → 201 | 400 | 409
+- `GET /api/admin/channels/:id` → 200 | 404
+- `PUT /api/admin/channels/:id` body `{ name?, status?, config? }` → 200 | 404
+- `DELETE /api/admin/channels/:id` → 204 (soft-delete: `status=DISABLED`)
+- `POST /api/admin/channels/:id/test-ping` → 200 `{ reachable, latency_ms }` hoặc `{ supported: false, message }` (các type chưa implement ping)
+
+Config required fields theo `type`:
+- `HTTP_THIRD_PARTY`: `url`, `method`, `auth_type`
+- `FREESWITCH_ESL`: `host`, `port`, `password`
+- `TELCO_SMPP`: `host`, `port`, `system_id`, `password`
+
+Response ChannelResponse:
+```json
+{
+  "id": 1,
+  "code": "viettel-smpp",
+  "name": "Viettel SMPP",
+  "type": "TELCO_SMPP",
+  "config": { "host": "...", "port": 2775, "system_id": "...", "password": "..." },
+  "status": "ACTIVE",
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
 
 ### 3.6 Route
 
-- `GET /api/admin/routes?partner_id=`
-- `POST /api/admin/routes` body `{ partner_id, msisdn_prefix, channel_id, fallback_channel_id?, priority }`
-- `PATCH /api/admin/routes/{id}`
-- `DELETE /api/admin/routes/{id}`
+- `GET /api/admin/routes?partner_id=&channel_id=&page=&size=` → 200 `{ items, total, page, size }`
+- `POST /api/admin/routes` body `{ partner_id, msisdn_prefix, channel_id, fallback_channel_id?, priority? }` → 201 | 400 | 404 | 409
+- `PUT /api/admin/routes/:id` body `{ msisdn_prefix?, channel_id?, fallback_channel_id?, priority?, enabled? }` → 200 | 404 | 409
+- `DELETE /api/admin/routes/:id` → 204 (soft-delete: `enabled=false`)
+
+409 khi vi phạm unique constraint `(partner_id, msisdn_prefix, priority)`. `msisdn_prefix` được normalize (strip leading `+`).
 
 ### 3.7 Message log
 
-- `GET /api/admin/messages?partner_id=&channel_id=&state=&from=&to=&dest_addr=&page=&size=`
-- `GET /api/admin/messages/{id}` (kèm DLR history)
+- `GET /api/admin/messages?partner_id=&state=&dest_addr=&page=&size=` → 200 `{ items, total, page, size }` (sorted DESC createdAt)
+- `GET /api/admin/messages/:id` → 200 | 400 (invalid UUID) | 404
+
+Response MessageResponse:
+```json
+{
+  "id": "uuid",
+  "partner_id": 1,
+  "channel_id": 2,
+  "source_addr": "VHT",
+  "dest_addr": "84901234567",
+  "content": "Hello",
+  "encoding": "GSM7",
+  "inbound_via": "HTTP",
+  "state": "DELIVERED",
+  "message_id_telco": "...",
+  "error_code": null,
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
 
 ### 3.8 Sessions (SMPP active)
 
-- `GET /api/admin/sessions` → list `{ system_id, partner_code, source_ip, bound_at, bind_type }`
-- `POST /api/admin/sessions/{system_id}/kick` → unbind tất cả session của `system_id`
+- `GET /api/admin/sessions` → 200 `{ items: [], total: 0, note: "...Phase 3" }` (stub — Phase 3 sẽ implement đầy đủ)
+- `DELETE /api/admin/sessions/:id` → 501 Not Implemented (until Phase 3)
 
 ### 3.9 Dashboard / metrics
 
-- `GET /api/admin/stats/overview?from=&to=` → `{ total_messages, delivered, failed, by_partner: [...], by_channel: [...] }`
-- `GET /api/admin/stats/timeseries?from=&to=&bucket=hour&metric=count` → array `{ ts, value }` cho chart
+**`GET /api/admin/stats/overview`** → 200 map state → count:
+```json
+{ "RECEIVED": 120, "ROUTED": 118, "SUBMITTED": 115, "DELIVERED": 110, "FAILED": 5 }
+```
+
+**`GET /api/admin/stats/timeseries?granularity=hour|day&from=<ISO8601>&to=<ISO8601>`** → 200:
+```json
+{
+  "granularity": "hour",
+  "from": "2026-04-28T00:00:00Z",
+  "to": "2026-04-28T23:59:59Z",
+  "series": [
+    { "bucket": "2026-04-28T10:00:00Z", "state": "DELIVERED", "count": 42 }
+  ]
+}
+```
 
 ### 3.10 Admin user (operator)
 
-- `GET /api/admin/users`
-- `POST /api/admin/users` body `{ username, password, role, partner_id? }`
-- `PATCH /api/admin/users/{id}`
+- `GET /api/admin/users?page=&size=` → 200 `{ items, total, page, size }`
+- `GET /api/admin/users/:id` → 200 | 404
+- `POST /api/admin/users` body `{ username, password, role, partner_id? }` → 201 | 400 | 409
+- `PUT /api/admin/users/:id` body `{ password?, enabled? }` → 200 | 404
+
+Ràng buộc role: `ADMIN` → `partner_id` phải null; `PARTNER` → `partner_id` bắt buộc.
+
+Response (không có password field):
+```json
+{ "id": 1, "username": "admin", "role": "ADMIN", "partner_id": null, "enabled": true, "last_login_at": null, "created_at": "..." }
+```
 
 ---
 
@@ -248,7 +393,7 @@ Partner login → JWT có claim `partner_id`. Server tự động filter theo cl
 
 ### 4.6 Webhook config
 
-- `PATCH /api/portal/webhook` body `{ dlr_webhook_url }` — set DLR webhook URL của chính partner
+- `PATCH /api/portal/webhook` body `{ dlr_webhook }` — set DLR webhook của chính partner, `dlr_webhook` là object `{ url, method, headers }` (cùng schema JSONB với admin partner CRUD)
 
 ---
 

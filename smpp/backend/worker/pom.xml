@@ -13,5 +13,28 @@
     <artifactId>worker</artifactId>
     <packaging>jar</packaging>
     <name>SMPP Worker</name>
-    <description>Consume sms.inbound, route + dispatch (HTTP / ESL / SMPP client). Out of scope at T01 — placeholder.</description>
+    <description>Consume sms.inbound, resolve route, dispatch to HTTP provider / ESL / SMPP client.</description>
+
+    <dependencies>
+        <!-- Domain + JPA/AMQP/Redis auto-config from core. -->
+        <dependency><groupId>com.smpp</groupId><artifactId>core</artifactId></dependency>
+
+        <!-- Spring Boot bootstrap only — no HTTP server needed for pure consumer. -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
+
+        <!-- Test -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.smpp.worker.WorkerApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

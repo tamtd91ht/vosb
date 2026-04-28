@@ -31,12 +31,22 @@ smpp/backend/
 │       │   ├── ServerApplication.java
 │       │   ├── smpp/                  # jSMPP listener (port 2775)
 │       │   ├── config/VertxConfig.java # @Bean Vertx, HttpServer, root Router (port 8080)
+│       │   ├── auth/                  # JwtService, JwtAuthHandler, AuthContext
 │       │   ├── http/                   # Vert.x handlers (KHÔNG Spring MVC)
+│       │   │   ├── common/            # HandlerUtils (respondJson, parseBody, ...), BlockingDispatcher, PageResponse
 │       │   │   ├── partner/           # /api/v1/* router factory + handlers
 │       │   │   ├── admin/             # /api/admin/* router factory + handlers
+│       │   │   │   ├── auth/          # AuthHandlers (login/refresh/logout/me)
+│       │   │   │   ├── partner/       # PartnerHandlers, SmppAccountHandlers, ApiKeyHandlers
+│       │   │   │   ├── channel/       # ChannelHandlers (CRUD + test-ping)
+│       │   │   │   ├── route/         # RouteHandlers
+│       │   │   │   ├── message/       # MessageHandlers (read-only)
+│       │   │   │   ├── session/       # SessionHandlers (stub, Phase 3)
+│       │   │   │   ├── stats/         # StatsHandlers (overview + timeseries)
+│       │   │   │   ├── user/          # UserHandlers
+│       │   │   │   └── dto/           # PageResponse<T>
 │       │   │   ├── portal/            # /api/portal/* router factory + handlers
 │       │   │   ├── internal/          # /api/internal/* (DLR webhook, ...)
-│       │   │   ├── auth/              # ApiKeyHmacAuthHandler, JwtAuthHandler (Vert.x)
 │       │   │   └── error/             # ProblemJsonFailureHandler (RFC 7807)
 │       │   ├── inbound/               # MessagePublisher (publish sms.inbound)
 │       │   └── outbound/              # DlrForwarder (consume sms.dlr)
@@ -73,11 +83,11 @@ smpp/backend/
 
 | Package | Vai trò |
 |---|---|
-| `domain` | `@Entity` JPA classes mapping bảng SQL |
+| `domain` | `@Entity` JPA classes mapping bảng SQL: `Partner`, `PartnerSmppAccount`, `PartnerApiKey`, `Channel`, `Route`, `Message`, `Dlr`, `AdminUser` + 11 enums + `JsonNodeConverter` (JSONB AttributeConverter) |
 | `repository` | `interface XxxRepository extends JpaRepository<...>` |
 | `dto` | Record/POJO dùng cho REST + AMQP (vd `InboundMessageEvent`, `DlrEvent`) |
 | `messaging` | Constants `Exchanges.SMS_INBOUND="sms.inbound"`, `Queues.SMS_INBOUND_Q="sms.inbound.q"`, `RoutingKeys.partner(id)` |
-| `security` | `PasswordHasher` (bcrypt wrapper), `HmacSigner.verify(...)` |
+| `security` | `PasswordHasher` (bcrypt wrapper), `SecretCipher` (AES-GCM-256 encrypt/decrypt), `HmacSigner` (HMAC-SHA-256 sign + verify) |
 | `config` | `@Configuration` classes auto-imported qua Spring Boot auto-config (đặt `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`) |
 
 ### 2.2 RabbitMQ topology constants
@@ -154,7 +164,25 @@ Chi tiết đầy đủ: `smpp-protocol.md`.
 
 Quyết định: REST layer dùng **Vert.x Web**, Spring Boot chỉ giữ vòng đời/DI/config (xem **ADR-010** + `.claude/rules/vertx-rest.md`).
 
-`config/VertxConfig.java` — sở hữu `Vertx`, `HttpServer`, root `Router`. 4 sub-router (`partnerRouter`, `adminRouter`, `portalRouter`, `internalRouter`) là `@Component` factory expose `Router` bean, được mount theo path prefix:
+`config/VertxConfig.java` — sở hữu `Vertx`, `HttpServer`, root `Router`. 4 sub-router (`partnerRouter`, `adminRouter`, `portalRouter`, `internalRouter`) là `@Component` factory expose `Router` bean, được mount theo path prefix.
+
+**Admin router (Phase 2 — đã implement)**: `AdminRouterFactory` mount JWT guard (`JwtAuthHandler`) cho toàn bộ `/api/admin/*` trừ `/auth/login` và `/auth/refresh`, sau đó delegate sang các handler:
+
+| Handler | Endpoints |
+|---|---|
+| `AuthHandlers` | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` |
+| `PartnerHandlers` | CRUD `/partners` (5 EP) |
+| `SmppAccountHandlers` | CRUD `/partners/:id/smpp-accounts` (4 EP) |
+| `ApiKeyHandlers` | CRUD `/partners/:id/api-keys` (3 EP) |
+| `ChannelHandlers` | CRUD `/channels` + `POST /channels/:id/test-ping` (6 EP) |
+| `RouteHandlers` | CRUD `/routes` (4 EP) |
+| `MessageHandlers` | Read-only `/messages` (2 EP) |
+| `SessionHandlers` | Stub `/sessions` (Phase 3) |
+| `StatsHandlers` | `GET /stats/overview`, `GET /stats/timeseries` |
+| `UserHandlers` | CRUD `/users` (4 EP) |
+
+`http/common/HandlerUtils.java` — static helpers dùng chung cho mọi handler: `respondJson`, `parseBody`, `getPage`, `getSize`, `pathLong`, `handleError`, `asyncRespond`, `mapper()`. `http/admin/dto/PageResponse.java` — `record PageResponse<T>(List<T> items, long total, int page, int size)`.
+
 
 ```java
 @Configuration

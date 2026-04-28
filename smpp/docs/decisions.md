@@ -131,7 +131,7 @@ Format chuẩn:
 - **Bối cảnh**: Khi telco trả DLR, partner cần biết kết quả gửi để cập nhật hệ thống của họ.
 - **Quyết định**: Mọi DLR lưu vào bảng `dlr` (giữ history nhiều record/message). Sau khi lưu:
   - Nếu partner có SMPP session active → gửi `deliver_sm` (DLR PDU) trong session đó.
-  - Nếu partner cấu hình `dlr_webhook_url` → POST JSON tới URL đó (retry 30s/2m/10m, max 3).
+  - Nếu partner cấu hình `dlr_webhook` → HTTP request (method + custom headers từ config) tới URL đó (retry 30s/2m/10m, max 3). Xem ADR-013.
   - Nếu cả 2 không có → giữ DB, partner pull qua `GET /api/v1/messages/{id}`.
 - **Hệ quả**:
   - (+) Realtime cho partner — chuẩn ngành SMS.
@@ -232,4 +232,89 @@ Format chuẩn:
 
 ---
 
-## ADR mới sẽ append từ ADR-012 trở đi.
+## ADR-012: Lưu API key secret bằng AES-GCM-256 (không phải bcrypt)
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Bối cảnh**: `partner_api_key` cần lưu secret để xác thực HMAC. Phương án đầu (`secret_hash bcrypt`) không cho phép recover plaintext — khi partner mất secret, admin phải revoke key và tạo key mới, không thể hiển thị lại. Yêu cầu nghiệp vụ: admin có thể recover secret cho partner nếu cần (controlled access).
+- **Quyết định**: Lưu `secret_encrypted BYTEA` + `nonce BYTEA` (AES-GCM-256, nonce 12 bytes random mỗi lần encrypt). Key đọc từ env `APP_SECRET_KEY` (32 bytes). Implement trong `core/security/SecretCipher.java`. Schema: `partner_api_key(secret_encrypted, nonce)` thay cho `secret_hash VARCHAR`.
+- **Hệ quả**:
+  - (+) Admin có thể decrypt để recover secret khi partner yêu cầu (controlled).
+  - (+) AES-GCM cung cấp authenticated encryption — phát hiện tamper.
+  - (+) Key rotation: đổi `APP_SECRET_KEY` → re-encrypt tất cả secret (1 migration batch).
+  - (−) Nếu `APP_SECRET_KEY` bị lộ, toàn bộ secret bị compromise — phải bảo vệ key ở env/secret manager.
+  - (−) Phức tạp hơn bcrypt: cần quản lý nonce, không thể dùng với hashing thông thường.
+- **Alternatives đã cân nhắc**:
+  - `bcrypt(secret)`: không reversible, không thể recover — loại vì yêu cầu nghiệp vụ.
+  - Vault (HashiCorp) transit encryption: an toàn nhất nhưng dependency nặng, ngoài scope Phase 2.
+  - `pgcrypto` PG server-side encrypt: key nằm trong DB config — attack vector tương đương.
+
+---
+
+## ADR-013: DLR webhook config dùng JSONB trên bảng partner (không phải flat columns hay bảng riêng)
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Bối cảnh**: Partner cần cấu hình webhook endpoint để nhận DLR notification (khi không có SMPP session active). Hiện tại chỉ có `dlr_webhook_url VARCHAR(512)`. Yêu cầu bổ sung: custom HTTP headers (Authorization, X-Api-Key, ...) + method (default POST).
+- **Quyết định**: Thay `dlr_webhook_url VARCHAR` bằng `dlr_webhook JSONB` với cấu trúc `{url, method, headers}`. `NULL` = chưa cấu hình webhook. Nhất quán với `channel.config JSONB` pattern đã có.
+- **Hệ quả**:
+  - (+) Atomic: `dlr_webhook IS NULL` thay 3 cột NULL riêng — query đơn giản hơn.
+  - (+) Flexible: thêm `timeout_ms`, `retry_policy` sau không cần migration schema.
+  - (+) Nhất quán với `channel.config` — codebase có 1 pattern JSONB config.
+  - (−) Không có DB constraint trên cấu trúc nội bộ JSON — validate ở application layer.
+  - (−) Khó index trên `dlr_webhook->>'url'` nếu cần search theo URL.
+- **Alternatives đã cân nhắc**:
+  - Flat columns (`dlr_webhook_url`, `dlr_webhook_method`, `dlr_webhook_headers JSONB`): dễ constraint nhưng 3 cột NULL riêng, clutters partner table, khó extend.
+  - Bảng `partner_webhook` riêng: hỗ trợ nhiều webhook type (DLR, balance alert, ...) nhưng over-engineered cho Phase 2; có thể migrate sau nếu cần.
+
+---
+
+## ADR-014: HTTP Provider Adapter Pattern — hardcode adapter theo nhà cung cấp thay vì cấu hình động hoàn toàn
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Bối cảnh**: `channel.type = HTTP_THIRD_PARTY` cho phép gửi SMS/Voice OTP qua HTTP API của bên thứ ba (eSMS, Abenla, Vietguys, SpeedSms, Infobip, Stringee, ...). Mỗi nhà cung cấp có endpoint, request format, cơ chế auth và cấu trúc response khác nhau. Cần quyết định approach:
+  - **Option A — Fully dynamic**: ops nhập toàn bộ URL, HTTP method, body template (FreeMarker), headers, auth cấu hình tự do vào JSONB config.
+  - **Option B — Hardcode adapter**: mỗi nhà cung cấp có 1 `HttpProviderAdapter` riêng trong code; ops chỉ điền credentials (API key, token, ...) thông qua form tự mô tả.
+- **Quyết định**: **Option B — Provider Adapter Pattern**, kết hợp 1 `CUSTOM` adapter fallback cho nhà cung cấp chưa được hỗ trợ.
+  - Interface `HttpProviderAdapter` với methods: `providerCode()`, `providerName()`, `deliveryType()`, `fields() → List<ProviderField>`.
+  - `HttpProviderRegistry` collect tất cả adapter qua Spring DI, expose `GET /api/admin/channels/http-providers` trả metadata tự mô tả.
+  - FE render dynamic form dựa trên `fields` (type: text/password/url/select/textarea).
+  - Adapter hiện có: `ESmsAdapter`, `AbenlaAdapter`, `VietguysAdapter`, `SpeedSmsAdapter`, `InfobipAdapter`, `StringeeAdapter` (VOICE_OTP), `CustomHttpAdapter`.
+- **Hệ quả**:
+  - (+) UX vận hành đơn giản — ops chỉ chọn provider từ dropdown, điền credentials, không nhập URL/method/body thủ công.
+  - (+) Dispatch logic worker chuẩn hóa theo provider code — dễ test, dễ debug, ít lỗi format request.
+  - (+) Tự mô tả: FE không cần biết trước form của từng provider — đọc từ metadata API.
+  - (+) `CUSTOM` adapter vẫn hỗ trợ ops linh hoạt nhập FreeMarker body template khi cần.
+  - (−) Thêm nhà cung cấp mới = deploy code mới (không config-only). Chấp nhận được: số provider ổn định, mỗi lần thêm cần QA dispatch logic dù sao.
+  - (−) Mỗi adapter cần maintain riêng khi provider thay đổi API — thực tế ít xảy ra với provider lớn.
+- **Alternatives đã cân nhắc**:
+  - Option A fully dynamic: linh hoạt nhất nhưng UX tệ (ops phải biết format body template của từng provider), dễ cấu hình sai, dispatch logic worker không thể tối ưu theo provider.
+  - Plugin JAR hot-reload (OSGi/ServiceLoader): provider adapter là jar riêng, deploy không restart — overkill cho quy mô hiện tại.
+
+---
+
+## ADR-015: Hybrid Carrier Pricing — nội địa theo nhà mạng, quốc tế theo prefix
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Bối cảnh**: Bảng giá ban đầu (V2) dùng longest-prefix match trên `prefix VARCHAR`. Khi cần định giá theo nhà mạng nội địa Việt Nam, ops phải nhập thủ công 12 prefix Viettel, 8 prefix Mobifone, 8 prefix Vinaphone,... Vừa tốn công, vừa dễ bỏ sót khi MIC cấp đầu số mới. Ba phương án:
+  - **Option A — Prefix-only**: giữ nguyên, ops nhập đủ prefix. Không scale về ops.
+  - **Option B — Carrier-only**: bỏ prefix, chỉ lookup theo carrier. Không hỗ trợ giá quốc tế.
+  - **Option C — Hybrid**: nội địa → match theo `carrier`; quốc tế/catch-all → match theo `prefix` như cũ.
+- **Quyết định**: **Option C — Hybrid**, implement bằng cột `carrier VARCHAR(20) NULLABLE` trên `channel_rate` và `partner_rate`:
+  - `carrier IS NOT NULL` → giá nội địa, match theo tên nhà mạng (`VIETTEL`, `MOBIFONE`, `VINAPHONE`, `VIETNAMOBILE`, `GMOBILE`, `REDDI`).
+  - `carrier IS NULL` → giá quốc tế hoặc catch-all, match theo `prefix` (longest-prefix match như cũ). `prefix = ''` = catch-all.
+  - Bảng `carrier_prefix` (V3) ánh xạ 4 chữ số đầu E.164 → tên nhà mạng (seed 30 prefix theo quy hoạch số MIC 2024).
+  - Lookup thứ tự: `carrier_prefix` tra nhà mạng từ dest → nếu tìm thấy dùng carrier match; nếu không dùng prefix match.
+- **Hệ quả**:
+  - (+) Ops chỉ cần nhập 6 dòng giá (1 per carrier) cho nội địa, không còn nhập 30+ prefix thủ công.
+  - (+) Khi MIC cấp thêm đầu số mới cho một nhà mạng: chỉ cần thêm row `carrier_prefix` bằng Flyway V mới, không cần sửa bảng giá.
+  - (+) Đơn giản hóa UI — dropdown chọn nhà mạng thay vì input prefix thủ công.
+  - (−) Lookup thêm 1 JOIN hoặc subquery `carrier_prefix` khi route. Có thể cache `carrier_prefix` in-memory (stable data).
+  - (−) Phải maintain `carrier_prefix` khi MIC tái phân bổ đầu số (hiếm, ~1-2 lần/năm).
+  - (−) Số port (chuyển mạng giữ số) sẽ map sai nhà mạng — chấp nhận phase này, fix bằng HLR lookup phase sau.
+- **Alternatives đã cân nhắc**:
+  - Option A prefix-only: ops burden cao, dễ lỗi, không thay đổi.
+  - Option B carrier-only: đơn giản nhất nhưng mất hỗ trợ giá quốc tế — loại vì một số partner nhắn tin quốc tế.
+  - HLR lookup realtime (tra số → carrier tức thì): chính xác nhất nhưng cần integrate API HLR/MNP, tốn tiền per query, ngoài scope Phase 2.

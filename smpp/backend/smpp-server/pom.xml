@@ -26,6 +26,14 @@
         <dependency><groupId>io.vertx</groupId><artifactId>vertx-core</artifactId></dependency>
         <dependency><groupId>io.vertx</groupId><artifactId>vertx-web</artifactId></dependency>
 
+        <!-- JWT: api + impl (runtime) + jackson (runtime) — version managed in parent BOM -->
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-api</artifactId></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-impl</artifactId><scope>runtime</scope></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-jackson</artifactId><scope>runtime</scope></dependency>
+
+        <!-- jSMPP: SMPP server listener + session management -->
+        <dependency><groupId>org.jsmpp</groupId><artifactId>jsmpp</artifactId></dependency>
+
         <!-- Test -->
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>

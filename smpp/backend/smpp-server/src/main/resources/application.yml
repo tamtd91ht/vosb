@@ -4,9 +4,9 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
-  # Flyway sẽ enable ở T06 khi V1__init.sql tồn tại.
   flyway:
-    enabled: false
+    enabled: true
+    locations: classpath:db/migration
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:smpp_db}
@@ -63,12 +63,17 @@ app:
     port: ${HTTP_PORT:8080}
   smpp:
     port: ${SMPP_PORT:2775}
-    enquire-link-interval: 30s
+    enquire-link-interval-ms: ${SMPP_ENQUIRE_LINK_MS:30000}
+    executor:
+      core-size: ${SMPP_EXECUTOR_CORE:32}
+      max-size: ${SMPP_EXECUTOR_MAX:128}
+      queue-capacity: ${SMPP_EXECUTOR_QUEUE:256}
   jwt:
     secret: ${APP_JWT_SECRET:dev-only-not-for-prod-change-me-min-32-bytes}
     access-ttl: 1h
     refresh-ttl: 30d
   hmac:
     timestamp-skew: 5m
+    timestamp-skew-seconds: ${HMAC_TIMESTAMP_SKEW_SECONDS:300}
   secret:
     key: ${APP_SECRET_KEY:dev-only-aes-key-32-bytes-XXXXXX!}
