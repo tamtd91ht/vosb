@@ -8,6 +8,7 @@ import com.smpp.core.domain.enums.ChannelStatus;
 import com.smpp.core.repository.ChannelRepository;
 import com.smpp.core.repository.PartnerRepository;
 import com.smpp.core.repository.RouteRepository;
+import com.smpp.core.service.RateResolver;
 import com.smpp.server.http.admin.dto.PageResponse;
 import com.smpp.server.http.common.BlockingDispatcher;
 import com.smpp.server.http.common.HandlerUtils;
@@ -29,15 +30,18 @@ public class RouteHandlers {
     private final PartnerRepository partnerRepo;
     private final ChannelRepository channelRepo;
     private final BlockingDispatcher dispatcher;
+    private final RateResolver rateResolver;
 
     public RouteHandlers(RouteRepository routeRepo,
                          PartnerRepository partnerRepo,
                          ChannelRepository channelRepo,
-                         BlockingDispatcher dispatcher) {
+                         BlockingDispatcher dispatcher,
+                         RateResolver rateResolver) {
         this.routeRepo = routeRepo;
         this.partnerRepo = partnerRepo;
         this.channelRepo = channelRepo;
         this.dispatcher = dispatcher;
+        this.rateResolver = rateResolver;
     }
 
     // POST /api/admin/routes
@@ -64,7 +68,12 @@ public class RouteHandlers {
 
             Route route = new Route();
             route.setPartner(partner);
-            route.setMsisdnPrefix(normalizeMsisdnPrefix(req.msisdnPrefix()));
+            if (req.carrier() != null && !req.carrier().isBlank()) {
+                route.setCarrier(req.carrier().toUpperCase());
+                route.setMsisdnPrefix("");
+            } else {
+                route.setMsisdnPrefix(normalizeMsisdnPrefix(req.msisdnPrefix()));
+            }
             route.setChannel(channel);
             route.setPriority(req.priority() != null ? req.priority() : 100);
 
@@ -78,7 +87,16 @@ public class RouteHandlers {
             }
 
             try {
-                return toResponse(routeRepo.save(route));
+                Route saved = routeRepo.save(route);
+                Map<String, Object> resp = toResponse(saved);
+                List<String> warnings = rateResolver.checkCoverage(
+                        channel.getId(),
+                        partner.getId(),
+                        channel.getDeliveryType(),
+                        saved.getCarrier(),
+                        saved.getMsisdnPrefix());
+                resp.put("warnings", warnings);
+                return resp;
             } catch (DataIntegrityViolationException e) {
                 throw new ConflictException("Route with same (partner_id, msisdn_prefix, priority) already exists");
             }
@@ -133,7 +151,13 @@ public class RouteHandlers {
         dispatcher.executeAsync(() -> {
             Route route = routeRepo.findById(id)
                     .orElseThrow(() -> new EntityNotFoundException("Route not found: " + id));
-            if (req.msisdnPrefix() != null) route.setMsisdnPrefix(normalizeMsisdnPrefix(req.msisdnPrefix()));
+            if (req.carrier() != null && !req.carrier().isBlank()) {
+                route.setCarrier(req.carrier().toUpperCase());
+                route.setMsisdnPrefix("");
+            } else if (req.msisdnPrefix() != null) {
+                route.setCarrier(null);
+                route.setMsisdnPrefix(normalizeMsisdnPrefix(req.msisdnPrefix()));
+            }
             if (req.priority() != null) route.setPriority(req.priority());
             if (req.enabled() != null) route.setEnabled(req.enabled());
             if (req.channelId() != null) {
@@ -178,21 +202,34 @@ public class RouteHandlers {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private static final java.util.Set<String> VALID_CARRIERS = java.util.Set.of(
+            "VIETTEL", "MOBIFONE", "VINAPHONE", "VIETNAMOBILE", "GMOBILE", "REDDI");
+
     private void validateCreate(CreateRouteRequest req) {
         if (req.partnerId() == null) throw new IllegalArgumentException("partner_id is required");
-        if (req.msisdnPrefix() == null || req.msisdnPrefix().isBlank()) throw new IllegalArgumentException("msisdn_prefix is required");
         if (req.channelId() == null) throw new IllegalArgumentException("channel_id is required");
+        boolean hasCarrier = req.carrier() != null && !req.carrier().isBlank();
+        boolean hasPrefix  = req.msisdnPrefix() != null;
+        if (!hasCarrier && !hasPrefix) {
+            throw new IllegalArgumentException("Either carrier or msisdn_prefix is required");
+        }
+        if (hasCarrier && !VALID_CARRIERS.contains(req.carrier().toUpperCase())) {
+            throw new IllegalArgumentException("Invalid carrier: " + req.carrier());
+        }
     }
 
     private String normalizeMsisdnPrefix(String prefix) {
-        if (prefix.startsWith("+")) return prefix.substring(1);
-        return prefix;
+        if (prefix == null) return "";
+        String p = prefix.strip();
+        if (p.startsWith("+")) p = p.substring(1);
+        return p;
     }
 
     private Map<String, Object> toResponse(Route r) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", r.getId());
         m.put("partner_id", r.getPartner().getId());
+        m.put("carrier", r.getCarrier());
         m.put("msisdn_prefix", r.getMsisdnPrefix());
         m.put("channel_id", r.getChannel().getId());
         m.put("fallback_channel_id", r.getFallbackChannel() != null ? r.getFallbackChannel().getId() : null);
@@ -213,6 +250,7 @@ public class RouteHandlers {
 
     public record CreateRouteRequest(
             @JsonProperty("partner_id") Long partnerId,
+            String carrier,
             @JsonProperty("msisdn_prefix") String msisdnPrefix,
             @JsonProperty("channel_id") Long channelId,
             @JsonProperty("fallback_channel_id") Long fallbackChannelId,
@@ -220,6 +258,7 @@ public class RouteHandlers {
     ) {}
 
     public record UpdateRouteRequest(
+            String carrier,
             @JsonProperty("msisdn_prefix") String msisdnPrefix,
             @JsonProperty("channel_id") Long channelId,
             @JsonProperty("fallback_channel_id") Long fallbackChannelId,

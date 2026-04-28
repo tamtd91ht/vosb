@@ -21,6 +21,9 @@ public class Route {
     @Column(nullable = false, length = 16)
     private String msisdnPrefix;
 
+    @Column(length = 20)
+    private String carrier;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "channel_id", nullable = false)
     private Channel channel;
@@ -44,6 +47,8 @@ public class Route {
     public void setPartner(Partner partner) { this.partner = partner; }
     public String getMsisdnPrefix() { return msisdnPrefix; }
     public void setMsisdnPrefix(String msisdnPrefix) { this.msisdnPrefix = msisdnPrefix; }
+    public String getCarrier() { return carrier; }
+    public void setCarrier(String carrier) { this.carrier = carrier; }
     public Channel getChannel() { return channel; }
     public void setChannel(Channel channel) { this.channel = channel; }
     public Channel getFallbackChannel() { return fallbackChannel; }

@@ -292,11 +292,90 @@ Response ChannelResponse:
 ### 3.6 Route
 
 - `GET /api/admin/routes?partner_id=&channel_id=&page=&size=` → 200 `{ items, total, page, size }`
-- `POST /api/admin/routes` body `{ partner_id, msisdn_prefix, channel_id, fallback_channel_id?, priority? }` → 201 | 400 | 404 | 409
-- `PUT /api/admin/routes/:id` body `{ msisdn_prefix?, channel_id?, fallback_channel_id?, priority?, enabled? }` → 200 | 404 | 409
+- `POST /api/admin/routes` body (xem bên dưới) → 201 (kèm `warnings` nếu thiếu bảng giá) | 400 | 404 | 409
+- `PUT /api/admin/routes/:id` body `{ carrier?, msisdn_prefix?, channel_id?, fallback_channel_id?, priority?, enabled? }` → 200 | 404 | 409
 - `DELETE /api/admin/routes/:id` → 204 (soft-delete: `enabled=false`)
 
-409 khi vi phạm unique constraint `(partner_id, msisdn_prefix, priority)`. `msisdn_prefix` được normalize (strip leading `+`).
+**Hai loại định tuyến** (bắt buộc chọn một):
+
+```json
+// Theo nhà mạng (carrier route):
+{ "partner_id": 1, "carrier": "VIETTEL", "channel_id": 2, "priority": 100 }
+
+// Theo prefix số (prefix route, prefix trống = wildcard):
+{ "partner_id": 1, "msisdn_prefix": "8496", "channel_id": 2, "priority": 100 }
+```
+
+`carrier` hợp lệ: `VIETTEL`, `MOBIFONE`, `VINAPHONE`, `VIETNAMOBILE`, `GMOBILE`, `REDDI`. Carrier và msisdn_prefix loại trừ nhau — không được gửi cùng lúc.
+
+409: vi phạm unique constraint — mỗi partner chỉ có 1 carrier route per carrier, và unique `(partner_id, msisdn_prefix, priority)` cho prefix route.
+
+`msisdn_prefix` được normalize (strip leading `+`). Trống = wildcard catch-all.
+
+**Response 201 (create)** — thêm `warnings` advisory nếu thiếu bảng giá:
+```json
+{
+  "id": 5,
+  "partner_id": 1,
+  "carrier": "VIETTEL",
+  "msisdn_prefix": "",
+  "channel_id": 2,
+  "fallback_channel_id": null,
+  "priority": 100,
+  "enabled": true,
+  "created_at": "2026-04-28T10:00:00Z",
+  "warnings": [
+    "No active partner rate for carrier=VIETTEL — messages will not be billed",
+    "No active channel rate for carrier=VIETTEL — provider cost will not be tracked"
+  ]
+}
+```
+
+`warnings` rỗng = rate đã đầy đủ. Warning không block việc tạo route — chỉ advisory.
+
+### 3.11 Channel rates (bảng giá kênh)
+
+Bảng giá kênh = chi phí TKC trả cho provider. Đặt dưới `/api/admin/channels/:id/rates`.
+
+- `GET /api/admin/channels/:id/rates` → 200 list
+- `POST /api/admin/channels/:id/rates` body `{ carrier?, prefix?, rate, currency, unit, effective_from, effective_to? }` → 201
+- `PUT /api/admin/channels/:id/rates/:rateId` body `{ rate?, effective_to? }` → 200
+- `DELETE /api/admin/channels/:id/rates/:rateId` → 204
+
+`carrier` hoặc `prefix` (exclusive). `prefix = ''` = wildcard default rate.
+
+`unit`: `MESSAGE` (SMS), `SECOND` (Voice OTP), `CALL` (Voice OTP flat per call).
+
+Response ChannelRateResponse:
+```json
+{
+  "id": 1, "channel_id": 2,
+  "carrier": "VIETTEL", "prefix": "",
+  "rate": 0.0012, "currency": "VND", "unit": "MESSAGE",
+  "effective_from": "2026-01-01", "effective_to": null,
+  "created_at": "2026-04-28T00:00:00Z"
+}
+```
+
+### 3.12 Partner rates (bảng giá partner)
+
+Bảng giá partner = doanh thu TKC thu từ partner. Đặt dưới `/api/admin/partners/:partnerId/rates`.
+
+- `GET /api/admin/partners/:partnerId/rates?delivery_type=SMS|VOICE_OTP` → 200 list
+- `POST /api/admin/partners/:partnerId/rates` body `{ delivery_type, carrier?, prefix?, rate, currency, unit, effective_from, effective_to? }` → 201
+- `PUT /api/admin/partners/:partnerId/rates/:rateId` body `{ rate?, effective_to? }` → 200
+- `DELETE /api/admin/partners/:partnerId/rates/:rateId` → 204
+
+### 3.13 Carriers lookup
+
+- `GET /api/admin/carriers` → 200 list carrier với prefixes
+
+```json
+[
+  { "code": "VIETTEL", "name": "Viettel", "prefixes": ["8486","8496","8497","8498"] },
+  { "code": "MOBIFONE", "name": "MobiFone", "prefixes": ["8470","8479","8489"] }
+]
+```
 
 ### 3.7 Message log
 
@@ -324,8 +403,13 @@ Response MessageResponse:
 
 ### 3.8 Sessions (SMPP active)
 
-- `GET /api/admin/sessions` → 200 `{ items: [], total: 0, note: "...Phase 3" }` (stub — Phase 3 sẽ implement đầy đủ)
-- `DELETE /api/admin/sessions/:id` → 501 Not Implemented (until Phase 3)
+- `GET /api/admin/sessions` → 200 `{ items, total }` — list active SMPP sessions
+- `DELETE /api/admin/sessions/:id` → 204 (unbind + close) | 404
+
+Response SessionInfo:
+```json
+{ "session_id": "uuid", "system_id": "partner_a", "bind_type": "TRANSCEIVER", "remote_ip": "1.2.3.4", "bound_at": "2026-04-28T10:00:00Z" }
+```
 
 ### 3.9 Dashboard / metrics
 
@@ -399,13 +483,33 @@ Partner login → JWT có claim `partner_id`. Server tự động filter theo cl
 
 ## 5. Internal endpoints — `/api/internal/*`
 
-### 5.1 DLR webhook (3rd-party callback)
+### 5.1 DLR ingress (3rd-party callback / worker dispatch)
 
-- `POST /api/internal/dlr/{channel_id}` body schema do 3rd-party quyết định, server parse theo `channel.config.webhook_payload_format`.
-- Auth: shared secret trong header `X-Webhook-Secret` so với `channel.config.webhook_secret`.
-- IP whitelist check theo `channel.config.webhook_allowed_ips`.
+- `POST /api/internal/dlr/{channel_id}`
+- Auth: header `X-Internal-Secret` so với `app.internal.secret` (env `APP_INTERNAL_SECRET`).
 
-Response 200 OK với body trống (best practice cho webhook).
+Request body — **normalized format** (worker dispatcher hoặc 3rd-party adapter gọi sau khi normalize):
+```json
+{
+  "telco_message_id": "msgid-from-provider",
+  "state": "DELIVERED",
+  "error_code": "000"
+}
+```
+
+`state`: `DELIVERED` | `FAILED` | `EXPIRED` | `UNKNOWN`.
+
+Response 204 No Content (kể cả khi `telco_message_id` không tìm thấy — tránh retry vô tận từ provider).
+
+**Server flow:**
+1. Verify `X-Internal-Secret`.
+2. Tìm `message` theo `message_id_telco`. Nếu không tìm thấy → 204, log warning.
+3. Lưu row `dlr` (`source=HTTP_WEBHOOK`, `raw_payload=body`).
+4. Update `message.state` → `DELIVERED` hoặc `FAILED`.
+5. Publish `DlrEvent` vào exchange `sms.dlr` routing key `dlr.<partner_id>`.
+6. `DlrForwarder` (smpp-server, `@RabbitListener(sms.dlr.q)`) forward đến partner:
+   - **SMPP**: nếu partner có active session → gửi `deliver_sm` (ESM_CLASS SMSC_DEL_RECEIPT format chuẩn).
+   - **HTTP webhook**: nếu không có session, partner có `dlr_webhook` → POST JSON body `{message_id, state, dest_addr, error_code}` kèm custom headers.
 
 ---
 

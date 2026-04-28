@@ -121,6 +121,7 @@ export type HttpProvider = {
 export type Route = {
   id: number;
   partner_id: number;
+  carrier: string | null;
   msisdn_prefix: string;
   channel_id: number;
   fallback_channel_id: number | null;

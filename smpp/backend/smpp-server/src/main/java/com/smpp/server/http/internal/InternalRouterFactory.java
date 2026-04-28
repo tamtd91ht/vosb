@@ -5,15 +5,17 @@ import io.vertx.ext.web.Router;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Sub-router cho /api/internal/* (DLR webhook ingress từ 3rd-party, auth IP whitelist + shared secret).
- * Phase 6: T25 mount POST /dlr/{channelId}.
- */
 @Configuration
 public class InternalRouterFactory {
 
     @Bean("internalRouter")
-    public Router internalRouter(Vertx vertx) {
-        return Router.router(vertx);
+    public Router internalRouter(Vertx vertx, DlrIngressHandler dlr) {
+        Router r = Router.router(vertx);
+
+        // DLR ingress from 3rd-party HTTP providers / worker dispatcher
+        // Auth: X-Internal-Secret header
+        r.post("/dlr/:channelId").handler(dlr::ingestDlr);
+
+        return r;
     }
 }

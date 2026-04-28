@@ -33,9 +33,24 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Switch } from "@/components/ui/switch";
 
+const CARRIERS = [
+  { code: "VIETTEL", name: "Viettel" },
+  { code: "MOBIFONE", name: "MobiFone" },
+  { code: "VINAPHONE", name: "VinaPhone" },
+  { code: "VIETNAMOBILE", name: "Vietnamobile" },
+  { code: "GMOBILE", name: "Gmobile" },
+  { code: "REDDI", name: "Reddi" },
+] as const;
+
+const CARRIER_LABEL: Record<string, string> = Object.fromEntries(
+  CARRIERS.map((c) => [c.code, c.name])
+);
+
+type MatchMode = "carrier" | "prefix";
+
 const routeSchema = z.object({
   partner_id: z.coerce.number().int().min(1, "Bắt buộc"),
-  msisdn_prefix: z.string().min(1, "Bắt buộc"),
+  msisdn_prefix: z.string().optional(),
   channel_id: z.coerce.number().int().min(1, "Bắt buộc"),
   fallback_channel_id: z.coerce.number().int().optional(),
   priority: z.coerce.number().int().min(0).default(100),
@@ -52,6 +67,8 @@ export function RoutesClient() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Route | null>(null);
   const [page, setPage] = useState(0);
+  const [matchMode, setMatchMode] = useState<MatchMode>("carrier");
+  const [selectedCarrier, setSelectedCarrier] = useState("");
 
   const { data: routesData, isLoading } = useQuery<PageResponse<Route>>({
     queryKey: ["routes", page],
@@ -95,11 +112,11 @@ export function RoutesClient() {
   const createMutation = useMutation({
     mutationFn: (body: object) =>
       apiClient(token, "/api/admin/routes", { method: "POST", body }),
-    onSuccess: () => {
+    onSuccess: (data: { warnings?: string[] }) => {
       toast.success("Tạo route thành công");
+      (data?.warnings ?? []).forEach((w) => toast.warning(w));
       qc.invalidateQueries({ queryKey: ["routes"] });
-      setCreateOpen(false);
-      reset();
+      resetDialog();
     },
     onError: (err: unknown) => {
       toast.error(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi");
@@ -136,15 +153,26 @@ export function RoutesClient() {
   const onSubmit = (data: RouteForm) => {
     const body: Record<string, unknown> = {
       partner_id: data.partner_id,
-      msisdn_prefix: data.msisdn_prefix,
       channel_id: data.channel_id,
       priority: data.priority,
     };
+    if (matchMode === "carrier") {
+      body.carrier = selectedCarrier;
+    } else {
+      body.msisdn_prefix = data.msisdn_prefix ?? "";
+    }
     if (data.fallback_channel_id) {
       body.fallback_channel_id = data.fallback_channel_id;
     }
     createMutation.mutate(body);
   };
+
+  function resetDialog() {
+    setCreateOpen(false);
+    setMatchMode("carrier");
+    setSelectedCarrier("");
+    reset();
+  }
 
   const routes = routesData?.items ?? [];
   const total = routesData?.total ?? 0;
@@ -190,7 +218,7 @@ export function RoutesClient() {
                 <thead>
                   <tr className="border-b border-gray-100">
                     <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Partner</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Prefix</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Hướng</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Kênh</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fallback</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Priority</th>
@@ -208,9 +236,15 @@ export function RoutesClient() {
                         </code>
                       </td>
                       <td className="px-4 py-3">
-                        <code className="font-mono text-sm text-gray-800">
-                          {r.msisdn_prefix || "*"}
-                        </code>
+                        {r.carrier ? (
+                          <Badge variant="outline" className="text-xs font-medium bg-emerald-50 text-emerald-700 border-emerald-200">
+                            {CARRIER_LABEL[r.carrier] ?? r.carrier}
+                          </Badge>
+                        ) : (
+                          <code className="font-mono text-sm text-gray-800">
+                            {r.msisdn_prefix || "*"}
+                          </code>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
                         {channelMap[r.channel_id]?.name ?? `#${r.channel_id}`}
@@ -285,7 +319,7 @@ export function RoutesClient() {
       </Card>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) { setCreateOpen(false); reset(); } }}>
+      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) resetDialog(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Thêm route mới</DialogTitle>
@@ -310,16 +344,60 @@ export function RoutesClient() {
               )}
             </div>
 
+            {/* Mode selector: carrier vs prefix */}
             <div className="space-y-1.5">
-              <Label>MSISDN Prefix *</Label>
-              <Input
-                {...register("msisdn_prefix")}
-                placeholder="VD: 84 hoặc * cho tất cả"
-              />
-              {errors.msisdn_prefix && (
-                <p className="text-red-500 text-xs">{errors.msisdn_prefix.message}</p>
-              )}
+              <Label>Loại định tuyến *</Label>
+              <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setMatchMode("carrier")}
+                  className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all ${
+                    matchMode === "carrier"
+                      ? "bg-white shadow text-indigo-700"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Theo nhà mạng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatchMode("prefix")}
+                  className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all ${
+                    matchMode === "prefix"
+                      ? "bg-white shadow text-indigo-700"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Theo prefix
+                </button>
+              </div>
             </div>
+
+            {matchMode === "carrier" ? (
+              <div className="space-y-1.5">
+                <Label>Nhà mạng *</Label>
+                <Select value={selectedCarrier} onValueChange={(v) => setSelectedCarrier(v ?? "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Chọn nhà mạng..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CARRIERS.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>MSISDN Prefix (để trống = wildcard *)</Label>
+                <Input
+                  {...register("msisdn_prefix")}
+                  placeholder="VD: 8496 (Viettel) hoặc để trống cho tất cả"
+                />
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Kênh chính *</Label>
@@ -371,7 +449,7 @@ export function RoutesClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => { setCreateOpen(false); reset(); }}
+                onClick={resetDialog}
               >
                 Hủy
               </Button>

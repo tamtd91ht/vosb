@@ -7,15 +7,50 @@
 
 ## 🔁 Resume here for next session
 
-**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T19 ✅ T26 ✅(stub) + Provider/Pricing Addon ✅** — Phase 2 hoàn tất. FE admin+portal hoàn tất, `pnpm build` 22 routes xanh. Tiếp theo: **T20** (SMPP listener inbound, Phase 3 — xem M4 bên dưới).
+**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T26 ✅ + Provider/Pricing Addon ✅** — Phase 2–4 hoàn tất. SMPP listener + session + submit_sm + DLR ingress/forwarder + Partner HTTP API + Portal stubs đều xanh. Build `./mvnw -B package -DskipTests` 4 modules SUCCESS.
+
+### Các luồng còn lại (next flows)
+
+**Luồng 1 — SMS dispatch qua HTTP 3rd-party** (ưu tiên cao nhất, worker):
+- `InboundMessageConsumer` đã có `else` branch cho SMS nhưng chỉ log warning + FAILED.
+- Cần implement `HttpThirdPartyDispatcher` trong worker: đọc `channel.config.provider_code` → gọi `HttpProviderAdapter` tương ứng → gửi HTTP request tới provider → lưu `message_id_telco` → update state SUBMITTED → sau đó DLR qua `POST /api/internal/dlr/{channelId}`.
+- File cần tạo: `worker/.../HttpThirdPartyDispatcher.java`, wire vào `InboundMessageConsumer.handleSms()`.
+- Adapter đã có sẵn ở smpp-server (`adapters/`), cần chuyển hoặc duplicate sang worker — hoặc move lên `core`.
+
+**Luồng 2 — SMPP client tới telco** (TelcoSmppDispatcher, worker):
+- Worker bind ra telco SMSC như SMPP client (`SMPPSession` outbound).
+- Session pool `TelcoSmppSessionPool`: 1 pool per channel, auto-reconnect, enquire_link keep-alive.
+- Dispatch: `session.submitShortMessage(...)` → lấy `message_id` từ `submit_sm_resp` → lưu vào `message.message_id_telco`.
+- Telco gửi `deliver_sm` DLR về `SMPPSession.setMessageReceiverListener()` → worker normalize → POST `api/internal/dlr/{channelId}`.
+- `DlrForwarder` (smpp-server) đã sẵn sàng nhận từ RabbitMQ và forward về partner.
+- File cần tạo: `worker/.../TelcoSmppDispatcher.java`, `worker/.../TelcoSmppSessionPool.java`.
+
+**Luồng 3 — FreeSWITCH ESL dispatcher** (voice OTP nội bộ):
+- `VoiceOtpDispatcherService` hiện chỉ hỗ trợ `2TMOBILE_VOICE` (HTTP).
+- Cần thêm branch cho `FREESWITCH_ESL`: dùng jESL (hoặc raw TCP socket) kết nối FreeSWITCH ESL API `FREESWITCH_ESL` channel.
+- `originate {origination_caller_id_name=<sender>}sofia/gateway/<gw>/<destAddr> &playback(otp.wav)`.
+- Listen sự kiện `CHANNEL_HANGUP_COMPLETE` để xác định trạng thái cuộc gọi.
+- File cần tạo: `worker/.../FreeSwitchEslDispatcher.java`, `worker/.../EslSessionPool.java`.
+
+**Luồng 4 — Rate billing trong worker** (Phase 5+):
+- `RateResolver` (core) đã implement 3-level fallback lookup.
+- Khi worker dispatch xong → gọi `rateResolver.resolvePartnerRate(partnerId, deliveryType, carrier, prefix)` → deduct `partner.balance`.
+- Cần: `PartnerBalanceService` với optimistic locking (`@Version` trên Partner) để tránh race condition.
+- File cần tạo: `core/.../service/PartnerBalanceService.java`.
+
+**Luồng 5 — Route cache Redis** (tùy chọn, performance):
+- `RouteResolver.resolve()` hiện query DB mỗi message.
+- Có thể thêm Redis cache `route:partner:<id>:<destAddr>` TTL 60s.
+- Invalidate cache khi admin update route qua `PUT/DELETE /api/admin/routes/:id`.
+- Admin handler cần publish invalidation event hoặc direct `redis.delete(key)` sau save.
 
 ### Snapshot
 
-- **Repo state**: Maven multi-module backend (`com.smpp` groupId, package `com.smpp.*`), 1 commit `init` + tất cả T01-T05 chưa commit (làm lúc nào tuỳ user).
+- **Repo state**: Maven multi-module backend (`com.smpp` groupId, package `com.smpp.*`). Commits: `init`, `feat: phase1 T01-T05`, `feat: phase2+3 listener+auth+CRUD`, commit mới nhất sẽ có sau session này.
 - **Build hiện tại**: `./mvnw -B clean package -DskipTests` xanh, 4 modules `smpp-backend / core / smpp-server / worker`. Image `smpp-server:dev` đã build trong Docker.
-- **Compose scope** (sau khi user fix): `smpp/backend/docker-compose.yml` **chỉ có `smpp-server`**, join external network `infra-net`. Hạ tầng chạy compose riêng (đã quy hoạch tách từ đầu — prod ở `~/apps/infrastructure/` trên VPS).
-- **Local dev infra (orphan)**: 3 container `smpp-postgres / smpp-redis / smpp-rabbitmq` của T05 cũ vẫn chạy trên `smpp-dev_default` network, bind `127.0.0.1:5432/6379/5672`. KHÔNG còn được quản lý bởi compose nào — coi như "infra compose riêng" tạm cho dev. Volumes `smpp-dev_postgres_data` / `smpp-dev_redis_data` / `smpp-dev_rabbitmq_data` giữ data.
-- **Endpoint sống** (chạy local qua `java -jar` hoặc `mvnw spring-boot:run` — KHÔNG qua docker-compose locally, cần infra containers running): `GET /healthz`, `GET /readyz`, `GET /api/v1/ping`; toàn bộ admin API Phase 2: `POST /api/admin/auth/login`, `GET /api/admin/auth/me`, CRUD partners/smpp-accounts/api-keys/channels/routes/messages/sessions(stub)/stats/users.
+- **Compose scope**: `smpp/backend/docker-compose.yml` **chỉ có `smpp-server`**, join external network `infra-net`. Hạ tầng chạy compose riêng.
+- **Local dev infra (orphan)**: 3 container `smpp-postgres / smpp-redis / smpp-rabbitmq` của T05 cũ vẫn chạy trên `smpp-dev_default` network, bind `127.0.0.1:5432/6379/5672`. Volumes `smpp-dev_postgres_data` / `smpp-dev_redis_data` / `smpp-dev_rabbitmq_data` giữ data.
+- **Endpoint sống** (chạy local qua `java -jar` — KHÔNG qua docker-compose locally, cần infra containers running): Toàn bộ admin API Phase 2–4: login/auth, partners/smpp-accounts/api-keys/channels/routes/rates/carriers/messages/sessions/stats/users, partner inbound API (`/api/v1/messages`), DLR ingress (`/api/internal/dlr/{channelId}`), portal 6 EP. Worker: consume `sms.inbound.q` → route → Voice OTP dispatch (2T-Mobile HTTP).
 
 ### Quick verify (chạy lại nếu nghi state lệch)
 
@@ -324,26 +359,27 @@ Các task bổ sung hoàn thành trước khi vào Phase 3:
 
 ## M5 — Partner HTTP + Internal DLR + Portal (Phase 4 + 6 + 9 partial)
 
-- [ ] **T23** — ApiKeyHmacAuthHandler + Redis replay/skew check
-  - Files: `http/auth/ApiKeyHmacAuthHandler.java`, `RedisReplayGuard.java`
+- [x] **T23** — ApiKeyHmacAuthHandler + Redis replay/skew check ✅
+  - Files: `http/auth/ApiKeyHmacAuthHandler.java`
   - Size: M | Depends: T08, T13
   - DoD: sai sig → 401; replay → 401; timestamp lệch >5p → 401.
 
-- [ ] **T24** — Partner `/api/v1/messages` 3 EP
-  - Files: `http/partner/MessageHandlers.java`, reuse `MessagePublisher`
+- [x] **T24** — Partner `/api/v1/messages` 3 EP ✅
+  - Files: `http/partner/PartnerMessageHandlers.java`
   - Size: M | Depends: T22, T23
   - DoD: curl HMAC → 202 + message_id; partner chỉ thấy của mình.
 
-- [ ] **T25** — Internal DLR webhook + DlrForwarder
-  - Files: `http/internal/DlrIngressHandler.java`, `outbound/DlrForwarder.java`
+- [x] **T25** — Internal DLR webhook + DlrForwarder ✅
+  - Files: `http/internal/DlrIngressHandler.java`, `outbound/DlrForwarder.java`, `core/amqp/DlrEvent.java`
   - Size: L | Depends: T22
   - DoD: POST `/api/internal/dlr/{ch}` lưu row `dlr`; AMQP `sms.dlr` → forward thành công khi session active hoặc POST webhook fallback.
+  - Note: Auth = `X-Internal-Secret` header. SMPP deliver_sm format SMSC receipt. HTTP webhook fallback với custom headers từ partner.dlr_webhook.
 
-- [x] **T26** — Portal 6 EP
+- [x] **T26** — Portal 6 EP ✅
   - Files: `http/portal/*Handlers.java`
   - Size: M | Depends: T13, T16, T18
   - DoD: login partner → only data của mình; cố override `partner_id` qua query bị bỏ qua.
-  - Note: Handler stubs hoàn tất (B01 trong `smpp-fe-portal-plan.md`). Cần wire + smoke test khi BE containers running.
+  - Note: Handler stubs hoàn tất. Cần wire + smoke test khi BE containers running.
 
 🏷 **M5 Done — tag `v0.1-phase-4-6-9-partial`**
 

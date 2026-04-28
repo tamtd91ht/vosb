@@ -318,3 +318,51 @@ Format chuẩn:
   - Option A prefix-only: ops burden cao, dễ lỗi, không thay đổi.
   - Option B carrier-only: đơn giản nhất nhưng mất hỗ trợ giá quốc tế — loại vì một số partner nhắn tin quốc tế.
   - HLR lookup realtime (tra số → carrier tức thì): chính xác nhất nhưng cần integrate API HLR/MNP, tốn tiền per query, ngoài scope Phase 2.
+
+---
+
+## ADR-016: Định tuyến theo nhà mạng — 2-phase RouteResolver
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Bối cảnh**: Trước khi có ADR này, route chỉ match theo `msisdn_prefix`. Để cấu hình "Viettel → Provider B, Mobifone → Provider A" ops phải nhập 12 prefix Viettel + 8 prefix Mobifone riêng — tổng ~35 route rows mỗi partner. Tốn công, dễ bỏ sót khi MIC cấp đầu số mới. Cần thêm "carrier route" song song với prefix route.
+- **Quyết định**: Thêm cột `carrier VARCHAR(20) NULLABLE` vào bảng `route`. Partial unique indexes tách riêng 2 domain: `route_partner_carrier_uidx WHERE carrier IS NOT NULL` và `route_partner_prefix_priority_uidx WHERE carrier IS NULL`. RouteResolver worker thực hiện **2-phase lookup**:
+  1. **Phase 1 (carrier match)**: `CarrierResolver.resolve(destAddr)` tra `carrier_prefix` in-memory → tìm `route` có `carrier = <carrier_code>` cho partner. Nếu tìm thấy → dùng ngay.
+  2. **Phase 2 (prefix match)**: Nếu Phase 1 không có kết quả, fallback về prefix match như cũ (bao gồm wildcard `prefix = ''`).
+  - `CarrierResolver` load toàn bộ `carrier_prefix` vào in-memory sorted list khi startup (`@PostConstruct`), không query DB mỗi message.
+  - UI admin: dialog thêm route có toggle "Theo nhà mạng / Theo prefix"; carrier route hiển thị badge khác prefix route trong bảng.
+- **Hệ quả**:
+  - (+) Giảm từ ~35 route rows xuống còn 6 rows (1 per carrier) + 1 wildcard cho mỗi partner.
+  - (+) Khi MIC cấp đầu số mới: chỉ cần thêm row `carrier_prefix` bằng Flyway, không cần sửa route.
+  - (+) Backward compatible: prefix route vẫn hoạt động bình thường — 2-phase là additive, không thay thế.
+  - (−) `CarrierResolver` là in-memory — phải restart để cập nhật `carrier_prefix` mới (chấp nhận: prefix thay đổi rất ít, ~1 lần/năm).
+  - (−) Nếu cùng partner có cả carrier route và prefix route cho cùng carrier, carrier route luôn thắng — ops cần hiểu thứ tự ưu tiên.
+- **Alternatives đã cân nhắc**:
+  - Giữ prefix-only, chỉ seed carrier_prefix để ops tra: không giảm số route rows.
+  - Thay hoàn toàn prefix bằng carrier: mất hỗ trợ quốc tế.
+  - Dùng JSONB rule engine per route: quá linh hoạt, khó debug dispatch.
+
+---
+
+## ADR-017: Rate resolution hierarchy — wildcard default thay vì block dispatch
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Bối cảnh**: Sau khi có bảng giá `channel_rate` và `partner_rate` (V2), câu hỏi xuất hiện: nếu thêm route mới mà chưa có bảng giá cho hướng đó (carrier hoặc prefix) thì hệ thống làm gì? Hai phương án:
+  - **Option A — Block dispatch**: không dispatch nếu thiếu bảng giá.
+  - **Option B — Wildcard fallback + advisory warning**: cho phép dispatch nhưng dùng rate `(carrier IS NULL, prefix = '')` làm default; nếu không có wildcard thì dispatch vẫn chạy nhưng trả về warning khi tạo route.
+- **Quyết định**: **Option B — Wildcard fallback + advisory warning**:
+  - `RateResolver.resolve*()` tra theo thứ tự: (1) carrier-specific, (2) prefix-specific, (3) wildcard `(carrier IS NULL, prefix = '')`. Luôn có kết quả nếu ops setup wildcard.
+  - `RateResolver.checkCoverage()` dùng ở route creation time: trả `List<String> warnings` nếu thiếu rate — **không block** việc tạo route. Warnings hiển thị dạng toast trên admin UI.
+  - Wildcard rate (`prefix = ''`) đóng vai trò "catch-all default" — ops nên luôn setup ít nhất 1 wildcard rate.
+  - Dispatch worker (phase sau) dùng `RateResolver` để tra cost mỗi message; nếu không có rate nào (kể cả wildcard) thì ghi warning log và dispatch tiếp (không block).
+- **Hệ quả**:
+  - (+) Không chặn traffic khi ops quên setup rate — hệ thống vẫn deliver, tránh outage.
+  - (+) Advisory warning tại thời điểm tạo route — sớm nhất có thể, không phải lúc dispatch.
+  - (+) Cấu trúc giống RouteResolver (3-level fallback) — developer dễ hiểu, nhất quán.
+  - (−) Có thể dispatch không billing được nếu ops bỏ qua warning — cần monitor alert trên billing worker phase sau.
+  - (−) Wildcard rate "ăn cả" nếu ops quên setup rate cụ thể — nhưng đây là hành vi intentional.
+- **Alternatives đã cân nhắc**:
+  - Option A block dispatch: đảm bảo billing nhưng gây outage khi ops nhầm — UX tệ hơn.
+  - Hard-reject route creation khi thiếu rate: ops phải setup rate trước route — thứ tự phụ thuộc ngược, khó onboard partner mới.
+  - Billing riêng theo batch cuối ngày: tách rate lookup khỏi dispatch — đơn giản hơn nhưng mất khả năng real-time cost tracking.

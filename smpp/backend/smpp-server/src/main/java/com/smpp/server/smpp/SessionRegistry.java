@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 @Component
 public class SessionRegistry {
@@ -54,5 +55,18 @@ public class SessionRegistry {
         Set<SMPPServerSession> set = bySystemId.get(info.systemId());
         if (set == null) return Optional.empty();
         return set.stream().filter(s -> s.getSessionId().equals(sessionId)).findFirst();
+    }
+
+    public List<SMPPServerSession> getActiveSessionsForPartner(Long partnerId) {
+        return partnerIdBySession.entrySet().stream()
+                .filter(e -> partnerId.equals(e.getValue()))
+                .flatMap(e -> {
+                    SessionInfo info = infos.get(e.getKey());
+                    if (info == null) return Stream.empty();
+                    Set<SMPPServerSession> set = bySystemId.get(info.systemId());
+                    if (set == null) return Stream.empty();
+                    return set.stream().filter(s -> s.getSessionId().equals(e.getKey()));
+                })
+                .toList();
     }
 }

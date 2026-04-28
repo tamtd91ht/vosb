@@ -32,6 +32,7 @@
          │      │  id (PK)               │
          │      │  partner_id (FK)       │*──────────────────┐
          │      │  msisdn_prefix         │                   │
+         │      │  carrier (V4)          │                   │
          │      │  channel_id (FK)       │*─────┐            │
          │      │  priority              │      │            │
          │      │  fallback_channel_id   │*─┐   │            │
@@ -255,20 +256,29 @@ CREATE TABLE route (
     id                    BIGSERIAL PRIMARY KEY,
     partner_id            BIGINT NOT NULL REFERENCES partner(id) ON DELETE CASCADE,
     msisdn_prefix         VARCHAR(16) NOT NULL,           -- normalized không có '+', vd "8490"
+    carrier               VARCHAR(20),                    -- V4: tên nhà mạng (xem ghi chú bên dưới)
     channel_id            BIGINT NOT NULL REFERENCES channel(id),
     fallback_channel_id   BIGINT REFERENCES channel(id),
     priority              INT NOT NULL DEFAULT 100,
     enabled               BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (partner_id, msisdn_prefix, priority)
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- Unique constraints thay bằng 2 partial index (xem V4):
+    --   route_partner_carrier_uidx       UNIQUE (partner_id, carrier) WHERE carrier IS NOT NULL
+    --   route_partner_prefix_priority_uidx UNIQUE (partner_id, msisdn_prefix, priority) WHERE carrier IS NULL
 );
 CREATE INDEX idx_route_partner_enabled ON route(partner_id, enabled);
 CREATE INDEX idx_route_lookup ON route(partner_id, msisdn_prefix);
+CREATE INDEX idx_route_carrier ON route(partner_id, carrier) WHERE carrier IS NOT NULL;
 ```
 
+**Cột `carrier` (V4) — logic hybrid routing:**
+- `carrier IS NOT NULL` → carrier-based route: toàn bộ traffic của partner đến nhà mạng đó → channel; cột `msisdn_prefix` không dùng khi lookup.
+- `carrier IS NULL` → prefix-based route (hành vi gốc): match theo `msisdn_prefix`.
+- Thứ tự ưu tiên lookup: nếu số đích tra được nhà mạng từ `carrier_prefix`, thử carrier route trước; nếu không có → fallback prefix route.
+
 Match logic (xem `routing.md`):
-- Sort theo `priority DESC, length(msisdn_prefix) DESC`.
-- `dest_addr.startsWith(msisdn_prefix)` → match.
+- Carrier route: `carrier = <detected_carrier>` AND `partner_id = ?` AND `enabled = TRUE`.
+- Prefix route: `dest_addr.startsWith(msisdn_prefix)`, sort theo `priority DESC, length(msisdn_prefix) DESC`.
 
 ### 2.6 `message`
 
@@ -431,12 +441,18 @@ Tạo cả 8 bảng + index + check constraints. Seed default `admin_user` qua `
 Thêm `delivery_type VARCHAR(20)` vào `channel`; tạo `channel_rate` và `partner_rate` để theo dõi chi phí và giá theo prefix.
 
 ### V3__carrier_prefix.sql (đã apply)
-Tạo `carrier_prefix` (30 prefix nội địa Việt Nam); thêm cột `carrier VARCHAR(20)` vào `channel_rate` và `partner_rate` để hỗ trợ logic hybrid: domestic match theo carrier, international/catch-all match theo prefix.
+Tạo `carrier_prefix` (32 prefix nội địa Việt Nam); thêm cột `carrier VARCHAR(20)` vào `channel_rate` và `partner_rate` để hỗ trợ logic hybrid: domestic match theo carrier, international/catch-all match theo prefix.
 
-### Migrations sau V3 (ví dụ tương lai)
-- `V4__add_partner_rate_limit.sql` — thêm cột `partner.rate_limit_per_second`.
-- `V5__add_message_segments.sql` — long SMS multi-segment.
-- `V6__create_billing_event.sql` — billing detail.
+### V4__add_route_carrier.sql
+Drop constraint `route_partner_id_msisdn_prefix_priority_key`; thêm cột `carrier VARCHAR(20)` vào `route`; tạo hai partial unique index (`route_partner_carrier_uidx` cho carrier route, `route_partner_prefix_priority_uidx` cho prefix route) và index lookup `idx_route_carrier`.
+
+### V5__seed_carrier_prefix.sql
+Re-seed 32 prefix nhà mạng Việt Nam vào `carrier_prefix` với `ON CONFLICT (prefix) DO NOTHING` — idempotent, an toàn khi áp vào môi trường đã có V3.
+
+### Migrations sau V5 (ví dụ tương lai)
+- `V6__add_partner_rate_limit.sql` — thêm cột `partner.rate_limit_per_second`.
+- `V7__add_message_segments.sql` — long SMS multi-segment.
+- `V8__create_billing_event.sql` — billing detail.
 
 **Quy tắc**: KHÔNG sửa V đã apply. Nếu sai → V mới đảo ngược.
 
