@@ -14,34 +14,54 @@ import com.smpp.server.http.common.BlockingDispatcher;
 import com.smpp.server.http.common.HandlerUtils;
 import io.vertx.ext.web.RoutingContext;
 import jakarta.persistence.EntityNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class RouteHandlers {
+
+    private static final Logger log = LoggerFactory.getLogger(RouteHandlers.class);
 
     private final RouteRepository routeRepo;
     private final PartnerRepository partnerRepo;
     private final ChannelRepository channelRepo;
     private final BlockingDispatcher dispatcher;
     private final RateResolver rateResolver;
+    private final StringRedisTemplate redis;
 
     public RouteHandlers(RouteRepository routeRepo,
                          PartnerRepository partnerRepo,
                          ChannelRepository channelRepo,
                          BlockingDispatcher dispatcher,
-                         RateResolver rateResolver) {
+                         RateResolver rateResolver,
+                         StringRedisTemplate redis) {
         this.routeRepo = routeRepo;
         this.partnerRepo = partnerRepo;
         this.channelRepo = channelRepo;
         this.dispatcher = dispatcher;
         this.rateResolver = rateResolver;
+        this.redis = redis;
+    }
+
+    /** Drop all cached route entries for the given partner. */
+    private void invalidatePartnerRouteCache(Long partnerId) {
+        try {
+            Set<String> keys = redis.keys("route:partner:" + partnerId + ":*");
+            if (keys != null && !keys.isEmpty()) redis.delete(keys);
+        } catch (DataAccessException e) {
+            log.warn("Route cache invalidation failed for partner {}: {}", partnerId, e.getMessage());
+        }
     }
 
     // POST /api/admin/routes
@@ -88,6 +108,7 @@ public class RouteHandlers {
 
             try {
                 Route saved = routeRepo.save(route);
+                invalidatePartnerRouteCache(partner.getId());
                 Map<String, Object> resp = toResponse(saved);
                 List<String> warnings = rateResolver.checkCoverage(
                         channel.getId(),
@@ -171,7 +192,9 @@ public class RouteHandlers {
                 route.setFallbackChannel(fb);
             }
             try {
-                return toResponse(routeRepo.save(route));
+                Route saved = routeRepo.save(route);
+                invalidatePartnerRouteCache(saved.getPartner().getId());
+                return toResponse(saved);
             } catch (DataIntegrityViolationException e) {
                 throw new ConflictException("Route with same (partner_id, msisdn_prefix, priority) already exists");
             }
@@ -195,6 +218,7 @@ public class RouteHandlers {
                     .orElseThrow(() -> new EntityNotFoundException("Route not found: " + id));
             route.setEnabled(false);
             routeRepo.save(route);
+            invalidatePartnerRouteCache(route.getPartner().getId());
             return null;
         }).onSuccess(ignored -> ctx.response().setStatusCode(204).end())
           .onFailure(err -> HandlerUtils.handleError(ctx, err));

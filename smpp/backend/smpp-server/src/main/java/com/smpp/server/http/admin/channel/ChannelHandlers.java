@@ -14,8 +14,12 @@ import com.smpp.server.http.common.HandlerUtils;
 import com.smpp.server.http.provider.HttpProviderRegistry;
 import io.vertx.ext.web.RoutingContext;
 import jakarta.persistence.EntityNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
@@ -28,6 +32,7 @@ import java.util.Set;
 @Component
 public class ChannelHandlers {
 
+    private static final Logger log = LoggerFactory.getLogger(ChannelHandlers.class);
     private static final ObjectMapper MAPPER = HandlerUtils.mapper();
     private static final Set<String> HTTP_REQUIRED = Set.of("url", "method", "auth_type");
     private static final Set<String> ESL_REQUIRED = Set.of("host", "port", "password");
@@ -37,15 +42,33 @@ public class ChannelHandlers {
     private final BlockingDispatcher dispatcher;
     private final HttpProviderRegistry providerRegistry;
     private final MessageRepository messageRepo;
+    private final StringRedisTemplate redis;
 
     public ChannelHandlers(ChannelRepository channelRepo,
                            BlockingDispatcher dispatcher,
                            HttpProviderRegistry providerRegistry,
-                           MessageRepository messageRepo) {
+                           MessageRepository messageRepo,
+                           StringRedisTemplate redis) {
         this.channelRepo = channelRepo;
         this.dispatcher = dispatcher;
         this.providerRegistry = providerRegistry;
         this.messageRepo = messageRepo;
+        this.redis = redis;
+    }
+
+    /**
+     * Drop ALL cached route entries — channel config changes can affect any
+     * partner whose route points at this channel. {@code keys()} is O(N) but
+     * the route cache stays small in this phase; switch to SCAN once Redis
+     * grows large.
+     */
+    private void invalidateAllRouteCache() {
+        try {
+            Set<String> keys = redis.keys("route:partner:*");
+            if (keys != null && !keys.isEmpty()) redis.delete(keys);
+        } catch (DataAccessException e) {
+            log.warn("Route cache invalidation failed: {}", e.getMessage());
+        }
     }
 
     // POST /api/admin/channels
@@ -134,7 +157,9 @@ public class ChannelHandlers {
             if (req.status() != null) ch.setStatus(ChannelStatus.valueOf(req.status().toUpperCase()));
             if (req.config() != null) ch.setConfig(MAPPER.valueToTree(req.config()));
             if (req.deliveryType() != null) ch.setDeliveryType(DeliveryType.valueOf(req.deliveryType().toUpperCase()));
-            return toResponse(channelRepo.save(ch));
+            Channel saved = channelRepo.save(ch);
+            invalidateAllRouteCache();
+            return toResponse(saved);
         }).onSuccess(result -> HandlerUtils.respondJson(ctx, 200, result))
           .onFailure(err -> HandlerUtils.handleError(ctx, err));
     }
@@ -147,6 +172,7 @@ public class ChannelHandlers {
                     .orElseThrow(() -> new EntityNotFoundException("Channel not found: " + id));
             ch.setStatus(ChannelStatus.DISABLED);
             channelRepo.save(ch);
+            invalidateAllRouteCache();
             return null;
         }).onSuccess(ignored -> ctx.response().setStatusCode(204).end())
           .onFailure(err -> HandlerUtils.handleError(ctx, err));
