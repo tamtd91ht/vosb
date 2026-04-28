@@ -20,13 +20,16 @@ public class InboundMessageConsumer {
 
     private final RouteResolver routeResolver;
     private final VoiceOtpDispatcherService voiceOtpDispatcher;
+    private final SmsDispatcherService smsDispatcher;
     private final MessageRepository messageRepo;
 
     public InboundMessageConsumer(RouteResolver routeResolver,
                                   VoiceOtpDispatcherService voiceOtpDispatcher,
+                                  SmsDispatcherService smsDispatcher,
                                   MessageRepository messageRepo) {
         this.routeResolver = routeResolver;
         this.voiceOtpDispatcher = voiceOtpDispatcher;
+        this.smsDispatcher = smsDispatcher;
         this.messageRepo = messageRepo;
     }
 
@@ -55,10 +58,7 @@ public class InboundMessageConsumer {
             if (channel.getDeliveryType() == DeliveryType.VOICE_OTP) {
                 handleVoiceOtp(event, channel);
             } else {
-                // SMS dispatch handled in a future phase
-                log.warn("SMS channel dispatch not yet implemented, message={} channel={}",
-                        event.messageId(), channel.getCode());
-                messageRepo.updateState(event.messageId(), MessageState.FAILED, "SMS_DISPATCH_NOT_IMPLEMENTED");
+                handleSms(event, channel);
             }
         } catch (Exception e) {
             log.error("Dispatch error for message {}: {}", event.messageId(), e.getMessage(), e);
@@ -69,6 +69,19 @@ public class InboundMessageConsumer {
     private void handleVoiceOtp(InboundMessageEvent event, Channel channel) {
         VoiceOtpDispatcherService.DispatchResult result =
                 voiceOtpDispatcher.dispatch(channel, event.destAddr(), event.content());
+
+        if (result.success()) {
+            messageRepo.updateStateAndTelcoId(
+                    event.messageId(), MessageState.SUBMITTED, null, result.providerMessageId());
+        } else {
+            messageRepo.updateState(
+                    event.messageId(), MessageState.FAILED, truncate(result.error(), 64));
+        }
+    }
+
+    private void handleSms(InboundMessageEvent event, Channel channel) {
+        SmsDispatcherService.DispatchResult result = smsDispatcher.dispatch(
+                channel, event.sourceAddr(), event.destAddr(), event.content(), event.messageId());
 
         if (result.success()) {
             messageRepo.updateStateAndTelcoId(
