@@ -7,15 +7,15 @@
 
 ## 🔁 Resume here for next session
 
-**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T26 ✅ + Provider/Pricing Addon ✅** — Phase 2–4 hoàn tất. SMPP listener + session + submit_sm + DLR ingress/forwarder + Partner HTTP API + Portal stubs đều xanh. Build `./mvnw -B package -DskipTests` 4 modules SUCCESS.
+**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T26 ✅ + Provider/Pricing Addon ✅ + Luồng 1 ✅** — Phase 2–4 hoàn tất + SMS HTTP dispatch xong. Build `./mvnw -B package -DskipTests` 4 modules SUCCESS. Commit `8063dd4`.
 
 ### Các luồng còn lại (next flows)
 
-**Luồng 1 — SMS dispatch qua HTTP 3rd-party** (ưu tiên cao nhất, worker):
-- `InboundMessageConsumer` đã có `else` branch cho SMS nhưng chỉ log warning + FAILED.
-- Cần implement `HttpThirdPartyDispatcher` trong worker: đọc `channel.config.provider_code` → gọi `HttpProviderAdapter` tương ứng → gửi HTTP request tới provider → lưu `message_id_telco` → update state SUBMITTED → sau đó DLR qua `POST /api/internal/dlr/{channelId}`.
-- File cần tạo: `worker/.../HttpThirdPartyDispatcher.java`, wire vào `InboundMessageConsumer.handleSms()`.
-- Adapter đã có sẵn ở smpp-server (`adapters/`), cần chuyển hoặc duplicate sang worker — hoặc move lên `core`.
+**Luồng 1 — SMS dispatch qua HTTP 3rd-party** ✅ **DONE** (`2026-04-28`):
+- `SmsDispatcherService` + 6 callers (`SpeedSMS`, `eSMS`, `Vietguys`, `Abenla`, `Infobip`, `CUSTOM`).
+- `InboundMessageConsumer.handleSms()` gọi dispatcher → update state SUBMITTED/FAILED.
+- `CUSTOM` caller: template substitution (`${source_addr/dest_addr/content/message_id}`) + JSONPath response ID/status parsing.
+- Vietguys tự động chuyển E.164 `84...` → local `0...` format.
 
 **Luồng 2 — SMPP client tới telco** (TelcoSmppDispatcher, worker):
 - Worker bind ra telco SMSC như SMPP client (`SMPPSession` outbound).
@@ -50,7 +50,7 @@
 - **Build hiện tại**: `./mvnw -B clean package -DskipTests` xanh, 4 modules `smpp-backend / core / smpp-server / worker`. Image `smpp-server:dev` đã build trong Docker.
 - **Compose scope**: `smpp/backend/docker-compose.yml` **chỉ có `smpp-server`**, join external network `infra-net`. Hạ tầng chạy compose riêng.
 - **Local dev infra (orphan)**: 3 container `smpp-postgres / smpp-redis / smpp-rabbitmq` của T05 cũ vẫn chạy trên `smpp-dev_default` network, bind `127.0.0.1:5432/6379/5672`. Volumes `smpp-dev_postgres_data` / `smpp-dev_redis_data` / `smpp-dev_rabbitmq_data` giữ data.
-- **Endpoint sống** (chạy local qua `java -jar` — KHÔNG qua docker-compose locally, cần infra containers running): Toàn bộ admin API Phase 2–4: login/auth, partners/smpp-accounts/api-keys/channels/routes/rates/carriers/messages/sessions/stats/users, partner inbound API (`/api/v1/messages`), DLR ingress (`/api/internal/dlr/{channelId}`), portal 6 EP. Worker: consume `sms.inbound.q` → route → Voice OTP dispatch (2T-Mobile HTTP).
+- **Endpoint sống** (chạy local qua `java -jar` — KHÔNG qua docker-compose locally, cần infra containers running): Toàn bộ admin API Phase 2–4: login/auth, partners/smpp-accounts/api-keys/channels/routes/rates/carriers/messages/sessions/stats/users, partner inbound API (`/api/v1/messages`), DLR ingress (`/api/internal/dlr/{channelId}`), portal 6 EP. Worker: consume `sms.inbound.q` → route → Voice OTP (2T-Mobile HTTP) + **SMS HTTP dispatch (SpeedSMS/eSMS/Vietguys/Abenla/Infobip/CUSTOM)**.
 
 ### Quick verify (chạy lại nếu nghi state lệch)
 
