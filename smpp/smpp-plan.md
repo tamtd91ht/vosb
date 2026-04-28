@@ -7,7 +7,7 @@
 
 ## 🔁 Resume here for next session
 
-**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T26 ✅ + Provider/Pricing Addon ✅ + Luồng 1 ✅ + Luồng 2 ✅** — Phase 2–4 hoàn tất + SMS HTTP + SMPP telco dispatch xong. Build `./mvnw -B package -DskipTests` 4 modules SUCCESS. Commit `c799d5e`.
+**Trạng thái cuối** (cập nhật `2026-04-28`): **T06–T26 ✅ + Provider/Pricing Addon ✅ + Luồng 1 ✅ + Luồng 2 ✅ + Luồng 3 ✅ + Luồng 4 ✅ + Luồng 5 ✅** — Phase 2–4 hoàn tất + toàn bộ 5 luồng worker đã xong. Build `./mvnw -B package -DskipTests` 4 modules SUCCESS. Commit `01e7eed`.
 
 ### Các luồng còn lại (next flows)
 
@@ -24,24 +24,24 @@
 - `SmsDispatcherService`: thêm `TELCO_SMPP` branch đầu tiên (trước HTTP provider switch).
 - Encoding hỗ trợ: GSM7 (ISO_8859_1 bytes, dataCoding 0x00) + UCS2 (UTF-16BE bytes, dataCoding 0x08).
 
-**Luồng 3 — FreeSWITCH ESL dispatcher** (voice OTP nội bộ):
-- `VoiceOtpDispatcherService` hiện chỉ hỗ trợ `2TMOBILE_VOICE` (HTTP).
-- Cần thêm branch cho `FREESWITCH_ESL`: dùng jESL (hoặc raw TCP socket) kết nối FreeSWITCH ESL API `FREESWITCH_ESL` channel.
-- `originate {origination_caller_id_name=<sender>}sofia/gateway/<gw>/<destAddr> &playback(otp.wav)`.
-- Listen sự kiện `CHANNEL_HANGUP_COMPLETE` để xác định trạng thái cuộc gọi.
-- File cần tạo: `worker/.../FreeSwitchEslDispatcher.java`, `worker/.../EslSessionPool.java`.
+**Luồng 3 — FreeSWITCH ESL dispatcher** ✅ **DONE** (`2026-04-28`):
+- `EslConnectionPool`: 1 thingscloud `InboundClient` (singleton) nạp ServerOption per ACTIVE FREESWITCH_ESL channel; library tự handle reconnect. Subscribe `CHANNEL_HANGUP_COMPLETE` global, listener route theo addr→channelId.
+- `FreeSwitchEslDispatcher`: build originate command (`{origination_caller_id_name=...,originate_timeout=N}sofia/gateway/<gw>/<dest> &playback(<wav>)`), gọi `client.sendSyncApiCommand(addr, "originate", args)`, parse `+OK <uuid>` / `-ERR <reason>` từ body; pre-register UUID vào EslDlrProcessor.
+- `EslDlrProcessor`: ConcurrentHashMap pending uuid→messageId+channelId với TTL cleanup; on hangup match UUID → ghi `Dlr` row (source=FREESWITCH_ESL, raw_payload chứa headers) + update `Message.state` (DELIVERED nếu NORMAL_CLEARING, FAILED ngược lại). Không publish AMQP — voice OTP không có partner DLR webhook.
+- Wire vào `VoiceOtpDispatcherService`: thêm case `"FREESWITCH_ESL"` → `eslDispatcher.dispatch(channel, destAddr, content, messageId)`. Signature `dispatch()` thêm UUID `messageId` để cho phép pre-register.
+- Tooling fix: parent pom đổi `link.thingscloud:freeswitch-esl-client:0.9.2` → `link.thingscloud:freeswitch-esl:2.2.0` (artifact đã đổi tên).
 
-**Luồng 4 — Rate billing trong worker** (Phase 5+):
-- `RateResolver` (core) đã implement 3-level fallback lookup.
-- Khi worker dispatch xong → gọi `rateResolver.resolvePartnerRate(partnerId, deliveryType, carrier, prefix)` → deduct `partner.balance`.
-- Cần: `PartnerBalanceService` với optimistic locking (`@Version` trên Partner) để tránh race condition.
-- File cần tạo: `core/.../service/PartnerBalanceService.java`.
+**Luồng 4 — Rate billing trong worker** ✅ **DONE** (`2026-04-28`):
+- `PartnerRepository.deductBalance(id, amount)`: atomic `UPDATE partner SET balance = balance - :amount WHERE id = :id AND balance >= :amount`. Trả 0 nếu insufficient (không trừ, không throw). KHÔNG cần `@Version` trên Partner — atomic SQL bảo đảm concurrent-safe.
+- `PartnerBalanceService.deductForMessage(...)`: gọi `RateResolver.resolvePartnerRate(...)` → match thì deduct, không match → log warn no-op.
+- Wire vào `InboundMessageConsumer.chargePartner(...)` sau khi `result.success()` ở cả `handleSms` và `handleVoiceOtp`. Inject thêm `CarrierResolver` để resolve carrier param.
+- Cơ chế pre-paid (reject nếu balance < 0 trước dispatch) thuộc Phase 5+, ngoài scope hiện tại.
 
-**Luồng 5 — Route cache Redis** (tùy chọn, performance):
-- `RouteResolver.resolve()` hiện query DB mỗi message.
-- Có thể thêm Redis cache `route:partner:<id>:<destAddr>` TTL 60s.
-- Invalidate cache khi admin update route qua `PUT/DELETE /api/admin/routes/:id`.
-- Admin handler cần publish invalidation event hoặc direct `redis.delete(key)` sau save.
+**Luồng 5 — Route cache Redis** ✅ **DONE** (`2026-04-28`):
+- `RouteResolver`: cache key `route:partner:<id>:<destAddr>`, TTL 60s. Cache miss → DB resolve → write cache. Cache hit → reconstruct transient `Channel` (reflection set field `id` vì entity không có setter; setters cho code/type/deliveryType/status/config). Redis lỗi → `DataAccessException` log warn, fallback DB silently.
+- Cache value: `Map<String,Object>` với `id/code/type/deliveryType/status/configJson`. `configJson` lưu dạng String (JsonNode.toString) parse lại bằng ObjectMapper khi read.
+- Invalidation: `RouteHandlers.create()/update()/delete()` xóa `route:partner:<id>:*` (per-partner). `ChannelHandlers.update()/delete()` xóa toàn bộ `route:partner:*` vì channel config thay đổi ảnh hưởng cached entry trên mọi partner.
+- `keys()` O(N) chấp nhận do phase này bảng cache nhỏ; chuyển sang SCAN nếu Redis lớn.
 
 ### Snapshot
 

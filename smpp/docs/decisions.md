@@ -72,7 +72,7 @@ Format chuẩn:
 ## ADR-004: FreeSWITCH tích hợp qua ESL TCP
 
 - **Ngày**: 2026-04-27
-- **Trạng thái**: Accepted
+- **Trạng thái**: Accepted (artifact đã thay — xem addendum 2026-04-28)
 - **Bối cảnh**: Voice OTP yêu cầu originate call + playback TTS. Cần biết kết quả call (answered/no answer/busy) realtime để mark state.
 - **Quyết định**: Worker dùng `org.freeswitch.esl.client` (Java ESL client) kết nối ESL inbound TCP tới FreeSWITCH host. Lệnh `bgapi originate` + listen event `CHANNEL_HANGUP_COMPLETE` để map state.
 - **Hệ quả**:
@@ -84,6 +84,13 @@ Format chuẩn:
 - **Alternatives đã cân nhắc**:
   - REST API qua `mod_xml_rpc`: đơn giản hơn nhưng không nhận event, phải poll.
   - Asterisk AMI thay FS: stack khác, không trong kế hoạch.
+
+### Addendum 2026-04-28 — đổi artifact ESL client
+
+- Artifact gốc `org.freeswitch.esl.client:0.9.x` không có trên Maven Central hiện đại; parent pom (commit cũ) declare nhầm `link.thingscloud:freeswitch-esl-client:0.9.2` cũng không tồn tại.
+- Chuyển sang `link.thingscloud:freeswitch-esl:2.2.0` — fork đang được duy trì, dùng Netty làm transport, hỗ trợ multi-server qua `InboundClientOption.addServerOption(...)` + auto-reconnect built-in.
+- API chính dùng trong code: `InboundClient.newInstance(InboundClientOption)`, `client.start()/shutdown()`, `client.sendSyncApiCommand(addr, "originate", args)`, `IEslEventListener.eventReceived(addr, EslEvent)`.
+- Quyết định "1 originate sync + listen `CHANNEL_HANGUP_COMPLETE`" của ADR-004 không thay đổi; chỉ đổi binding library.
 
 ---
 
