@@ -22,6 +22,9 @@
         <!-- Spring Boot bootstrap only — no HTTP server needed for pure consumer. -->
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
 
+        <!-- jSMPP: outbound SMPP client to telco SMSC (TelcoSmppDispatcher). -->
+        <dependency><groupId>org.jsmpp</groupId><artifactId>jsmpp</artifactId></dependency>
+
         <!-- Test -->
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>

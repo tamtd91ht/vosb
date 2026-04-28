@@ -2,7 +2,9 @@ package com.smpp.worker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smpp.core.domain.Channel;
+import com.smpp.core.domain.enums.ChannelType;
 import com.smpp.worker.sms.*;
+import com.smpp.worker.telco.TelcoSmppDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -10,8 +12,9 @@ import org.springframework.stereotype.Service;
 import java.util.UUID;
 
 /**
- * Dispatches SMS delivery to the appropriate HTTP provider caller
- * based on channel.config.provider_code.
+ * Dispatches SMS delivery to the appropriate provider:
+ *  - TELCO_SMPP channels: TelcoSmppDispatcher (outbound SMPP client)
+ *  - HTTP_THIRD_PARTY channels: per-provider HTTP caller (SpeedSMS, eSMS, etc.)
  */
 @Service
 public class SmsDispatcherService {
@@ -20,6 +23,7 @@ public class SmsDispatcherService {
 
     public record DispatchResult(boolean success, String providerMessageId, String error) {}
 
+    private final TelcoSmppDispatcher telcoSmppDispatcher;
     private final SpeedSmsCaller speedSmsCaller;
     private final ESmsCaller eSmsCaller;
     private final VietguysCaller vietguysCaller;
@@ -27,12 +31,14 @@ public class SmsDispatcherService {
     private final InfobipCaller infobipCaller;
     private final CustomHttpSmsCaller customCaller;
 
-    public SmsDispatcherService(SpeedSmsCaller speedSmsCaller,
+    public SmsDispatcherService(TelcoSmppDispatcher telcoSmppDispatcher,
+                                SpeedSmsCaller speedSmsCaller,
                                 ESmsCaller eSmsCaller,
                                 VietguysCaller vietguysCaller,
                                 AbenlaCaller abenlaCaller,
                                 InfobipCaller infobipCaller,
                                 CustomHttpSmsCaller customCaller) {
+        this.telcoSmppDispatcher = telcoSmppDispatcher;
         this.speedSmsCaller = speedSmsCaller;
         this.eSmsCaller = eSmsCaller;
         this.vietguysCaller = vietguysCaller;
@@ -43,6 +49,11 @@ public class SmsDispatcherService {
 
     public DispatchResult dispatch(Channel channel, String sourceAddr, String destAddr,
                                    String content, UUID messageId) {
+        if (channel.getType() == ChannelType.TELCO_SMPP) {
+            SmsSendResult raw = telcoSmppDispatcher.dispatch(channel, sourceAddr, destAddr, content);
+            return new DispatchResult(raw.success(), raw.providerMessageId(), raw.error());
+        }
+
         JsonNode config = channel.getConfig();
         String providerCode = config.path("provider_code").asText("");
 
