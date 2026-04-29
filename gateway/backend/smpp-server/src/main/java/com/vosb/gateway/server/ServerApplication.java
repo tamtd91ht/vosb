@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * (xem ADR-010 + .claude/rules/vertx-rest.md). Spring Boot ở đây chỉ giữ vai trò:
  * lifecycle, DI, config binding, JPA/AMQP/Redis auto-config từ module `core`.
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.vosb.gateway.server", "com.vosb.gateway.core"})
 public class ServerApplication {
 
     public static void main(String[] args) {
