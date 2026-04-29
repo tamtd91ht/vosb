@@ -89,4 +89,4 @@ public class VertxConfig {
 - Endpoint test dùng `vertx-junit5` + `WebClient` (Vert.x), KHÔNG `MockMvc`.
 - Integration test khởi `Vertx` thật + Testcontainers cho Postgres/Redis/RabbitMQ.
 
-Tham chiếu: ADR-010 trong `smpp/docs/decisions.md`.
+Tham chiếu: ADR-010 trong `gateway/docs/decisions.md`.

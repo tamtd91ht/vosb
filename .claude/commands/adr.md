@@ -1,5 +1,5 @@
 ---
-description: Draft and append a new ADR to smpp/docs/decisions.md. Usage: /adr <short title>
+description: Draft and append a new ADR to gateway/docs/decisions.md. Usage: /adr <short title>
 argument-hint: <short title>
 ---
 

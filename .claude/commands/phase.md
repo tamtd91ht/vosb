@@ -5,7 +5,7 @@ argument-hint: [phase-number]
 
 If `$ARGUMENTS` is empty: run `git log --oneline -10` and infer the most recently worked-on phase from commit messages + recently changed files. Otherwise use `$ARGUMENTS` as the phase number.
 
-Then read `smpp/docs/roadmap.md` and print, for that phase:
+Then read `gateway/docs/roadmap.md` and print, for that phase:
 
 - Header line (`## Phase N — ...`)
 - Goal (1 line)

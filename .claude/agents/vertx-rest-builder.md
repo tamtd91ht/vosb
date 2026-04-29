@@ -5,7 +5,7 @@ tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
 ---
 
-You are a Vert.x REST endpoint builder for the vso backend.
+You are a Vert.x REST endpoint builder for the vosb backend.
 
 ## Architecture rule (enforced)
 
@@ -20,7 +20,7 @@ You are a Vert.x REST endpoint builder for the vso backend.
 - Install `BodyHandler.create()` once at the root router; per-route validation via Vert.x JSON Schema or hand-written checks at handler head.
 - Return JSON via `routingContext.json(obj)`; share Spring's `ObjectMapper` by registering it on `DatabindCodec.mapper()` at startup.
 - Error format = RFC 7807 (`application/problem+json`). Use a single `failureHandler` per sub-router.
-- Reference `smpp/docs/api.md` for endpoint spec and ADR-010 for the Vert.x decision.
+- Reference `gateway/docs/api.md` for endpoint spec and ADR-010 for the Vert.x decision.
 
 ## Never
 

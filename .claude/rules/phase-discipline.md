@@ -1,12 +1,12 @@
 # Rule: Phase discipline
 
-Project follow `smpp/docs/roadmap.md` — 10 phase tuần tự. Mỗi phase có Definition of Done (DoD) cứng.
+Project follow `gateway/docs/roadmap.md` — 10 phase tuần tự. Mỗi phase có Definition of Done (DoD) cứng.
 
 ## Quy tắc
 
 - Phase `N` phải đạt 100% DoD trước khi bắt đầu code phase `N+1`.
 - DoD verify được bằng `phase-doc-check` skill (đa số) hoặc smoke test thủ công (cho FreeSWITCH/SMPP partner thật).
-- Khi gặp blocker giữa phase → ghi vào `smpp/docs/decisions.md` (ADR mới qua `adr-author` skill) HOẶC note tạm trong PR description.
+- Khi gặp blocker giữa phase → ghi vào `gateway/docs/decisions.md` (ADR mới qua `adr-author` skill) HOẶC note tạm trong PR description.
 - Khi quyết định chuyển phase, **commit + git tag**: `v0.<minor>-phase-<N>`.
 
 ## Khi user yêu cầu việc nằm ngoài phase hiện tại

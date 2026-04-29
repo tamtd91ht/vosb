@@ -1,11 +1,11 @@
 ---
 name: adr-author
-description: Append a new ADR to smpp/docs/decisions.md following the existing template. Use whenever the user makes an architecture decision worth recording (build tool, framework, security model, data layout, ...).
+description: Append a new ADR to gateway/docs/decisions.md following the existing template. Use whenever the user makes an architecture decision worth recording (build tool, framework, security model, data layout, ...).
 ---
 
 # ADR Author
 
-Append-only workflow for `smpp/docs/decisions.md`.
+Append-only workflow for `gateway/docs/decisions.md`.
 
 ## Steps
 

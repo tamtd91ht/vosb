@@ -1,6 +1,6 @@
 ---
 name: phase-doc-check
-description: Verify the Definition-of-Done for a roadmap phase. Reads smpp/docs/roadmap.md, parses the DoD list of the requested phase, runs each smoke check it can automate, and reports a punch list. Read-only — never commits or modifies code.
+description: Verify the Definition-of-Done for a roadmap phase. Reads gateway/docs/roadmap.md, parses the DoD list of the requested phase, runs each smoke check it can automate, and reports a punch list. Read-only — never commits or modifies code.
 ---
 
 # Phase DoD Check
@@ -11,7 +11,7 @@ description: Verify the Definition-of-Done for a roadmap phase. Reads smpp/docs/
 
 ## Steps
 
-1. Read `smpp/docs/roadmap.md`, locate `## Phase N — ...`.
+1. Read `gateway/docs/roadmap.md`, locate `## Phase N — ...`.
 2. Extract: `Goal`, `File chính`, `DoD`, `Smoke test`, `Dependencies`.
 3. For each DoD bullet, classify it:
    - **Auto-checkable**: `./mvnw -B verify`, `docker compose ps`, `curl /actuator/health`, presence of files. Run it.

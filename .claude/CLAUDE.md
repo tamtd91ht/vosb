@@ -1,13 +1,13 @@
-# vso — SMPP/Voice Gateway Platform
+# vosb — SMPP/Voice Gateway Platform
 
 Aggregator gateway: nhận SMS từ đối tác qua SMPP server (port 2775) hoặc HTTP API, worker route theo cấu hình ra **3rd-party API** / **FreeSWITCH (voice OTP)** / **SMPP client tới telco**.
 
 ## Repo layout
 
-- `smpp/backend/`  — Spring Boot 3 + jSMPP, Maven multi-module (`core`, `smpp-server`, `worker`)
-- `smpp/frontend/` — Next.js 15 App Router (admin + portal trong cùng app)
-- `smpp/nginx/`    — vhost + TLS config (Nginx chạy trên host server)
-- `smpp/docs/`     — thiết kế chi tiết, **đọc trước khi code**
+- `gateway/backend/`  — Spring Boot 3 + jSMPP, Maven multi-module (`core`, `smpp-server`, `worker`)
+- `gateway/frontend/` — Next.js 15 App Router (admin + portal trong cùng app)
+- `gateway/nginx/`    — vhost + TLS config (Nginx chạy trên host server)
+- `gateway/docs/`     — thiết kế chi tiết, **đọc trước khi code**
 - `readme/`        — bản sao docs tiếng Việt có chú thích (chỉ tham khảo)
 - `.ssh/`          — SSH private key tới server (KHÔNG commit)
 
@@ -25,25 +25,25 @@ Aggregator gateway: nhận SMS từ đối tác qua SMPP server (port 2775) ho�
 
 ## Tiến độ implementation
 
-**Source of truth**: `smpp/smpp-plan.md` — checklist 26 task (T01..T26) chia 5 milestone (M1-M5). Mỗi task có DoD + dependencies + note quirks gặp phải. Đầu file có section "🔁 Resume here" với snapshot trạng thái + verify commands + decisions log.
+**Source of truth**: `gateway/smpp-plan.md` — checklist 26 task (T01..T26) chia 5 milestone (M1-M5). Mỗi task có DoD + dependencies + note quirks gặp phải. Đầu file có section "🔁 Resume here" với snapshot trạng thái + verify commands + decisions log.
 
-Khi vào session mới: **đọc `smpp/smpp-plan.md` trước** để biết task nào đang dở, env quirks gì cần lưu ý, rồi mới tiếp tục.
+Khi vào session mới: **đọc `gateway/smpp-plan.md` trước** để biết task nào đang dở, env quirks gì cần lưu ý, rồi mới tiếp tục.
 
 ## Đọc theo thứ tự
 
-1. `smpp/docs/infras.md`         — hạ tầng đã có sẵn (KHÔNG động vào)
-2. `smpp/docs/architecture.md`   — sơ đồ tổng thể, flow message
-3. `smpp/docs/backend.md`        — Maven module, SMPP server, worker, dispatcher
-4. `smpp/docs/data-model.md`     — schema Postgres + Flyway plan
-5. `smpp/docs/api.md`            — REST API spec (admin/portal/partner)
-6. `smpp/docs/smpp-protocol.md`  — phần SMPP server inbound (bind/auth/PDU)
-7. `smpp/docs/routing.md`        — RouteResolver + cache + fallback logic
-8. `smpp/docs/dispatchers.md`    — 3 dispatcher (HTTP, ESL, SMPP client)
-9. `smpp/docs/dlr-flow.md`       — DLR ingress + forward về partner
-10. `smpp/docs/frontend.md`      — Next.js layout, auth, role guard
-11. `smpp/docs/nginx.md`         — vhost, TLS, UFW, deploy
-12. `smpp/docs/roadmap.md`       — phase 1→10 + Definition of Done
-13. `smpp/docs/decisions.md`     — Architecture Decision Records
+1. `gateway/docs/infras.md`         — hạ tầng đã có sẵn (KHÔNG động vào)
+2. `gateway/docs/architecture.md`   — sơ đồ tổng thể, flow message
+3. `gateway/docs/backend.md`        — Maven module, SMPP server, worker, dispatcher
+4. `gateway/docs/data-model.md`     — schema Postgres + Flyway plan
+5. `gateway/docs/api.md`            — REST API spec (admin/portal/partner)
+6. `gateway/docs/smpp-protocol.md`  — phần SMPP server inbound (bind/auth/PDU)
+7. `gateway/docs/routing.md`        — RouteResolver + cache + fallback logic
+8. `gateway/docs/dispatchers.md`    — 3 dispatcher (HTTP, ESL, SMPP client)
+9. `gateway/docs/dlr-flow.md`       — DLR ingress + forward về partner
+10. `gateway/docs/frontend.md`      — Next.js layout, auth, role guard
+11. `gateway/docs/nginx.md`         — vhost, TLS, UFW, deploy
+12. `gateway/docs/roadmap.md`       — phase 1→10 + Definition of Done
+13. `gateway/docs/decisions.md`     — Architecture Decision Records
 
 ## `.claude/` — rules, agents, skills, commands
 
@@ -75,10 +75,10 @@ Khi review code / khi agent làm task: ưu tiên đọc `rules/` tương ứng. 
 ## Quy ước
 
 - **Mã nguồn**: tên biến/class/comment bằng **tiếng Anh**.
-- **Tài liệu** trong `smpp/docs/`: **tiếng Việt** (mục tiêu chính), giữ nguyên thuật ngữ kỹ thuật tiếng Anh (Postgres, RabbitMQ, dispatcher...).
+- **Tài liệu** trong `gateway/docs/`: **tiếng Việt** (mục tiêu chính), giữ nguyên thuật ngữ kỹ thuật tiếng Anh (Postgres, RabbitMQ, dispatcher...).
 - **Commit message**: tiếng Anh, theo conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, ...).
 - Không commit secret hoặc `.env`. Mọi password/key đọc từ env vars.
-- Khi gặp quyết định kiến trúc mới → cập nhật doc tương ứng + thêm 1 ADR mới vào `smpp/docs/decisions.md`.
+- Khi gặp quyết định kiến trúc mới → cập nhật doc tương ứng + thêm 1 ADR mới vào `gateway/docs/decisions.md`.
 - File JSON/YAML deploy luôn ưu tiên env vars override (`${VAR:-default}` trong compose; `${spring.profiles.active}` trong app).
 
 ## Server access
@@ -96,7 +96,7 @@ ssh -i D:\works\tkc-02\.ssh\tamtd tamtd@116.118.2.74
 - Không tạo file mới ngoài kế hoạch nếu chưa hỏi user.
 - KHÔNG expose Postgres/Redis/RabbitMQ AMQP ra public (đã firewall, đừng đụng).
 - KHÔNG expose `/actuator/*` qua Nginx public.
-- KHÔNG sửa `smpp/docs/infras.md` (mô tả state hạ tầng đã chốt).
+- KHÔNG sửa `gateway/docs/infras.md` (mô tả state hạ tầng đã chốt).
 - KHÔNG chạy `docker compose down -v` (mất data).
 - KHÔNG SSH chạy lệnh ghi/restart trên server prod nếu user chưa yêu cầu rõ ràng.
 - KHÔNG tự ý chuyển port public (chỉ 80, 443, 2775 được expose theo plan).

@@ -1,4 +1,0 @@
-com.smpp.core.config.JacksonConfig
-com.smpp.core.config.DataSourceConfig
-com.smpp.core.config.RedisConfig
-com.smpp.core.config.AmqpConfig

@@ -1,0 +1,4 @@
+com.vosb.gateway.core.config.JacksonConfig
+com.vosb.gateway.core.config.DataSourceConfig
+com.vosb.gateway.core.config.RedisConfig
+com.vosb.gateway.core.config.AmqpConfig

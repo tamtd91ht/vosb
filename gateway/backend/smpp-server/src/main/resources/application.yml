@@ -1,0 +1,83 @@
+spring:
+  application:
+    name: smpp-server
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:smpp_db}
+    username: ${DB_USER:smpp_user}
+    password: ${DB_PASSWORD:smpp_pass}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Cho phép app start dù DB chưa sẵn sàng (Docker chưa up, dev local).
+      initialization-fail-timeout: -1
+      # Healthz check fail-fast khi DB DOWN (default 30s — quá lâu cho probe).
+      connection-timeout: ${DB_CONN_TIMEOUT:2000}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        # Tránh Hibernate query JDBC metadata khi DB chưa lên (chỉ cần ở dev/CI).
+        boot:
+          allow_jdbc_metadata_access: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        shutdown-timeout: 100ms
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:smpp_admin}
+    password: ${RABBITMQ_PASSWORD:smpp_pass}
+    virtual-host: ${RABBITMQ_VHOST:/}
+
+  main:
+    # Các bean infra (DataSource, Redis, AMQP) khởi tạo lazy — app start không cần infra up.
+    # T05 docker-compose lên đầy đủ, dev có thể đặt false để fail-fast.
+    lazy-initialization: true
+
+logging:
+  level:
+    root: INFO
+    com.vosb.gateway: DEBUG
+    org.hibernate.SQL: WARN
+
+# App-specific config (Vert.x HTTP, jSMPP) — dùng từ T04 trở đi.
+app:
+  http:
+    port: ${HTTP_PORT:8080}
+  smpp:
+    port: ${SMPP_PORT:2775}
+    enquire-link-interval-ms: ${SMPP_ENQUIRE_LINK_MS:30000}
+    executor:
+      core-size: ${SMPP_EXECUTOR_CORE:32}
+      max-size: ${SMPP_EXECUTOR_MAX:128}
+      queue-capacity: ${SMPP_EXECUTOR_QUEUE:256}
+  jwt:
+    secret: ${APP_JWT_SECRET:dev-only-not-for-prod-change-me-min-32-bytes}
+    access-ttl: 1h
+    refresh-ttl: 30d
+  hmac:
+    timestamp-skew: 5m
+    timestamp-skew-seconds: ${HMAC_TIMESTAMP_SKEW_SECONDS:300}
+  secret:
+    key: ${APP_SECRET_KEY:dev-only-aes-key-32-bytes-XXXXXX!}
+  internal:
+    secret: ${APP_INTERNAL_SECRET:dev-internal-secret-change-me}
+  dlr:
+    webhook-timeout-ms: ${DLR_WEBHOOK_TIMEOUT_MS:5000}
