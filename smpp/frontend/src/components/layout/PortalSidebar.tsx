@@ -33,7 +33,7 @@ export function PortalSidebar() {
           <Zap className="w-4 h-4 text-white" />
         </div>
         <div>
-          <p className="text-slate-900 font-bold text-sm leading-none">TKC Gateway</p>
+          <p className="text-slate-900 font-bold text-sm leading-none">VSO Gateway</p>
           <p className="text-sky-600 text-[10px] mt-0.5 font-medium tracking-wide uppercase">
             Partner Portal
           </p>

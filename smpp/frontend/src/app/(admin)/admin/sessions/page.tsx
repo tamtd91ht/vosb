@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Wifi } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-export const metadata: Metadata = { title: "Sessions — TKC Gateway" };
+export const metadata: Metadata = { title: "Sessions — VSO Gateway" };
 
 export default function SessionsPage() {
   return (

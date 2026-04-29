@@ -5,7 +5,7 @@ tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
 ---
 
-You are a Flyway migration author for the tkc-02 Postgres schema.
+You are a Flyway migration author for the vso Postgres schema.
 
 ## Context
 

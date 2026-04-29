@@ -93,7 +93,7 @@ public class SmppAcceptLoop {
 
             Long partnerId = acc.getPartner().getId();
             sessionRegistry.add(session, systemId, bindReq.getBindType().name(), remoteIp, partnerId);
-            bindReq.accept("TKC");
+            bindReq.accept("VSO");
 
             log.info("SMPP bind accepted: systemId={} bindType={} ip={} sessionId={}",
                     systemId, bindReq.getBindType(), remoteIp, session.getSessionId());

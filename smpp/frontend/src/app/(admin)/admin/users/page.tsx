@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { UsersClient } from "./UsersClient";
 
-export const metadata: Metadata = { title: "Người dùng — TKC Gateway" };
+export const metadata: Metadata = { title: "Người dùng — VSO Gateway" };
 
 export default function UsersPage() {
   return (

@@ -73,11 +73,11 @@ Giá trị cho phép: `SMS` | `VOICE_OTP`
 
 **2 loại rate:**
 
-1. **`channel_rate`** — Termination cost: TKC trả bao nhiêu cho mỗi channel/provider
+1. **`channel_rate`** — Termination cost: VSO trả bao nhiêu cho mỗi channel/provider
    - Theo prefix đích (VD: `84` VND 200/msg, `1` VND 1500/msg)
    - Với Voice OTP: theo giây (unit=SECOND) hoặc theo cuộc (unit=CALL)
 
-2. **`partner_rate`** — Billing rate: TKC thu của partner bao nhiêu
+2. **`partner_rate`** — Billing rate: VSO thu của partner bao nhiêu
    - Theo `delivery_type` (SMS vs Voice OTP) + prefix đích
    - Margin = `partner_rate - channel_rate`
 

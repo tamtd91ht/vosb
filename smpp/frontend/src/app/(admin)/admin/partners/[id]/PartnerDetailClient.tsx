@@ -1126,7 +1126,7 @@ export function PartnerDetailClient({ id }: { id: number }) {
             <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700">
               <strong>Đây là lần DUY NHẤT bạn thấy secret này.</strong> Hãy
-              sao chép và lưu ngay. Sau khi đóng, TKC Gateway không thể hiển
+              sao chép và lưu ngay. Sau khi đóng, VSO Gateway không thể hiển
               thị lại.
             </p>
           </div>

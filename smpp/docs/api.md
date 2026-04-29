@@ -335,7 +335,7 @@ Response ChannelResponse:
 
 ### 3.11 Channel rates (bảng giá kênh)
 
-Bảng giá kênh = chi phí TKC trả cho provider. Đặt dưới `/api/admin/channels/:id/rates`.
+Bảng giá kênh = chi phí VSO trả cho provider. Đặt dưới `/api/admin/channels/:id/rates`.
 
 - `GET /api/admin/channels/:id/rates` → 200 list
 - `POST /api/admin/channels/:id/rates` body `{ carrier?, prefix?, rate, currency, unit, effective_from, effective_to? }` → 201
@@ -359,7 +359,7 @@ Response ChannelRateResponse:
 
 ### 3.12 Partner rates (bảng giá partner)
 
-Bảng giá partner = doanh thu TKC thu từ partner. Đặt dưới `/api/admin/partners/:partnerId/rates`.
+Bảng giá partner = doanh thu VSO thu từ partner. Đặt dưới `/api/admin/partners/:partnerId/rates`.
 
 - `GET /api/admin/partners/:partnerId/rates?delivery_type=SMS|VOICE_OTP` → 200 list
 - `POST /api/admin/partners/:partnerId/rates` body `{ delivery_type, carrier?, prefix?, rate, currency, unit, effective_from, effective_to? }` → 201

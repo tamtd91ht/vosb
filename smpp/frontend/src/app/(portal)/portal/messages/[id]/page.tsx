@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { MessageDetailClient } from "./MessageDetailClient";
 
-export const metadata: Metadata = { title: "Chi tiết tin nhắn — TKC Gateway Portal" };
+export const metadata: Metadata = { title: "Chi tiết tin nhắn — VSO Gateway Portal" };
 
 export default function MessageDetailPage({ params }: { params: { id: string } }) {
   return (

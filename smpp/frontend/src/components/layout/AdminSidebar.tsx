@@ -76,7 +76,7 @@ export function AdminSidebar() {
           <Zap className="w-4 h-4 text-white" />
         </div>
         <div>
-          <p className="text-white font-bold text-sm leading-none">TKC Gateway</p>
+          <p className="text-white font-bold text-sm leading-none">VSO Gateway</p>
           <p className="text-indigo-400 text-[10px] mt-0.5 font-medium tracking-wide uppercase">
             Admin Console
           </p>

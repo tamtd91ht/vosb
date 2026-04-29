@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { RoutesClient } from "./RoutesClient";
 
-export const metadata: Metadata = { title: "Route — TKC Gateway" };
+export const metadata: Metadata = { title: "Route — VSO Gateway" };
 
 export default function RoutesPage() {
   return (

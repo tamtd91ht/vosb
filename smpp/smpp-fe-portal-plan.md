@@ -67,7 +67,7 @@ Content: bg-slate-50
 Card: bg-white, shadow-sm, border-0
 Button primary: bg-sky-600 hover:bg-sky-500
 ```
-**Logo**: TKC Gateway + "Partner Portal" subtitle (vs "Admin Console" của admin sidebar)
+**Logo**: VSO Gateway + "Partner Portal" subtitle (vs "Admin Console" của admin sidebar)
 
 ---
 
@@ -339,7 +339,7 @@ src/app/(portal)/portal/api-keys/
 │  ─────────────────────────────────────────────────  │
 │  ⚠️  Đây là lần DUY NHẤT bạn thấy secret này.      │
 │      Hãy sao chép và lưu ngay. Sau khi đóng,        │
-│      TKC Gateway không thể hiển thị lại.            │
+│      VSO Gateway không thể hiển thị lại.            │
 │  ─────────────────────────────────────────────────  │
 │  Key ID                                             │
 │  [ak_live_aBcDeFgH1234567890]          [📋 Copy]   │
@@ -415,7 +415,7 @@ src/app/(portal)/portal/webhook/
 ```
 ┌─ Cấu hình DLR Webhook ──────────────────────────────────────────────────────────┐
 │                                                                                  │
-│  Khi tin nhắn có trạng thái mới (DELIVERED/FAILED), TKC Gateway sẽ gọi HTTP    │
+│  Khi tin nhắn có trạng thái mới (DELIVERED/FAILED), VSO Gateway sẽ gọi HTTP    │
 │  đến URL bên dưới với payload JSON.                                              │
 │                                                                                  │
 │  Webhook URL *                                                                   │
@@ -426,7 +426,7 @@ src/app/(portal)/portal/webhook/
 │                                                                                  │
 │  Custom Headers (tùy chọn)                                                       │
 │  [Authorization    ] : [Bearer your-webhook-secret  ] [🗑]                       │
-│  [X-Partner-Token  ] : [tkc-partner-abc123          ] [🗑]                       │
+│  [X-Partner-Token  ] : [vso-partner-abc123          ] [🗑]                       │
 │  [+ Thêm header]                                                                 │
 │                                                                                  │
 │  ┌─ Payload mẫu ────────────────────────────────────────┐                       │

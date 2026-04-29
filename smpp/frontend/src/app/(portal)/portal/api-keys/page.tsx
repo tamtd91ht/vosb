@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ApiKeysClient } from "./ApiKeysClient";
 
-export const metadata: Metadata = { title: "API Keys — TKC Gateway Portal" };
+export const metadata: Metadata = { title: "API Keys — VSO Gateway Portal" };
 
 export default function ApiKeysPage() {
   return (

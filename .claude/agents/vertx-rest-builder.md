@@ -5,7 +5,7 @@ tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
 ---
 
-You are a Vert.x REST endpoint builder for the tkc-02 backend.
+You are a Vert.x REST endpoint builder for the vso backend.
 
 ## Architecture rule (enforced)
 

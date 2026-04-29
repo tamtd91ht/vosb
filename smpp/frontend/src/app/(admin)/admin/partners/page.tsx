@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { PartnersClient } from "./PartnersClient";
 
-export const metadata: Metadata = { title: "Đối tác — TKC Gateway" };
+export const metadata: Metadata = { title: "Đối tác — VSO Gateway" };
 
 export default function PartnersPage() {
   return (

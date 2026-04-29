@@ -12,7 +12,7 @@ export default function LoginPage() {
           </div>
           <div>
             <h1 className="text-white text-xl font-bold tracking-tight">
-              TKC Gateway
+              VSO Gateway
             </h1>
             <p className="text-indigo-300 text-xs">SMS & Voice OTP Platform</p>
           </div>
@@ -28,7 +28,7 @@ export default function LoginPage() {
           <LoginForm />
         </div>
         <p className="text-center text-slate-600 text-xs mt-6">
-          © 2026 VienthongTKC. All rights reserved.
+          © 2026 VSO. All rights reserved.
         </p>
       </div>
     </div>

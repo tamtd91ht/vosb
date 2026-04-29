@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DashboardClient } from "./DashboardClient";
 
-export const metadata: Metadata = { title: "Dashboard — TKC Gateway" };
+export const metadata: Metadata = { title: "Dashboard — VSO Gateway" };
 
 export default async function DashboardPage() {
   return (

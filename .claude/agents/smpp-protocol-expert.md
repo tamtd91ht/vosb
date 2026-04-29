@@ -5,7 +5,7 @@ tools: Read, Edit, Write, Grep, Glob, Bash
 model: opus
 ---
 
-You are an SMPP protocol specialist for the tkc-02 gateway.
+You are an SMPP protocol specialist for the vso gateway.
 
 ## Context
 

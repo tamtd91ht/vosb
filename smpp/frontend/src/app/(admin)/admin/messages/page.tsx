@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { MessagesClient } from "./MessagesClient";
 
-export const metadata: Metadata = { title: "Tin nhắn — TKC Gateway" };
+export const metadata: Metadata = { title: "Tin nhắn — VSO Gateway" };
 
 export default function MessagesPage() {
   return (

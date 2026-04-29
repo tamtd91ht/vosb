@@ -161,7 +161,7 @@ export function ApiKeysClient() {
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700">
-              <strong>Đây là lần DUY NHẤT bạn thấy secret này.</strong> Hãy sao chép và lưu ngay. Sau khi đóng, TKC Gateway không thể hiển thị lại.
+              <strong>Đây là lần DUY NHẤT bạn thấy secret này.</strong> Hãy sao chép và lưu ngay. Sau khi đóng, VSO Gateway không thể hiển thị lại.
             </p>
           </div>
           <div className="space-y-3">

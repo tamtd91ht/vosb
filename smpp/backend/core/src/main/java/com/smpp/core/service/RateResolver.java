@@ -35,7 +35,7 @@ public class RateResolver {
         this.partnerRateRepo = partnerRateRepo;
     }
 
-    // ── Channel rate (cost: TKC → provider) ──────────────────────────────────
+    // ── Channel rate (cost: VSO → provider) ──────────────────────────────────
 
     @Transactional(readOnly = true)
     public Optional<ChannelRate> resolveChannelRate(Long channelId, String carrier, String msisdnPrefix) {
@@ -56,7 +56,7 @@ public class RateResolver {
         return wildcards.isEmpty() ? Optional.empty() : Optional.of(wildcards.get(0));
     }
 
-    // ── Partner rate (revenue: partner → TKC) ────────────────────────────────
+    // ── Partner rate (revenue: partner → VSO) ────────────────────────────────
 
     @Transactional(readOnly = true)
     public Optional<PartnerRate> resolvePartnerRate(Long partnerId, DeliveryType deliveryType,

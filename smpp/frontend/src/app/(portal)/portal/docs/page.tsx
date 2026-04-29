@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DocsClient } from "./DocsClient";
 
-export const metadata: Metadata = { title: "Tài liệu — TKC Gateway Portal" };
+export const metadata: Metadata = { title: "Tài liệu — VSO Gateway Portal" };
 
 export default function DocsPage() {
   return (

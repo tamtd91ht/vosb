@@ -1,4 +1,4 @@
-# tkc-02 — SMPP/Voice Gateway Platform
+# vso — SMPP/Voice Gateway Platform
 
 Aggregator gateway: nhận SMS từ đối tác qua SMPP server (port 2775) hoặc HTTP API, worker route theo cấu hình ra **3rd-party API** / **FreeSWITCH (voice OTP)** / **SMPP client tới telco**.
 

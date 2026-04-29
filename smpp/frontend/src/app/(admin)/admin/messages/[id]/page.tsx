@@ -10,7 +10,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-export const metadata: Metadata = { title: "Chi tiết tin nhắn — TKC Gateway" };
+export const metadata: Metadata = { title: "Chi tiết tin nhắn — VSO Gateway" };
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (

@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SmppAccountsClient } from "./SmppAccountsClient";
 
-export const metadata: Metadata = { title: "SMPP Accounts — TKC Gateway Portal" };
+export const metadata: Metadata = { title: "SMPP Accounts — VSO Gateway Portal" };
 
 export default function SmppAccountsPage() {
   return (

@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { WebhookClient } from "./WebhookClient";
 
-export const metadata: Metadata = { title: "Webhook DLR — TKC Gateway Portal" };
+export const metadata: Metadata = { title: "Webhook DLR — VSO Gateway Portal" };
 
 export default function WebhookPage() {
   return (

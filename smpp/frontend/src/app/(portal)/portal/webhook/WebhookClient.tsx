@@ -67,7 +67,7 @@ export function WebhookClient() {
     <div className="max-w-2xl space-y-6">
       {/* Info box */}
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-600">
-        Khi tin nhắn có trạng thái mới (<strong>DELIVERED</strong> hoặc <strong>FAILED</strong>), TKC Gateway sẽ gửi HTTP request đến URL bên dưới với payload JSON:
+        Khi tin nhắn có trạng thái mới (<strong>DELIVERED</strong> hoặc <strong>FAILED</strong>), VSO Gateway sẽ gửi HTTP request đến URL bên dưới với payload JSON:
         <pre className="mt-2 bg-white border border-slate-200 rounded p-2 text-xs overflow-x-auto text-slate-700">
 {`{ "message_id": "uuid...", "state": "DELIVERED",
   "dest_addr": "84901234567", "delivered_at": "2026-04-28T..." }`}

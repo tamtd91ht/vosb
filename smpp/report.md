@@ -1,4 +1,4 @@
-# TKC SMPP Gateway — Tài liệu kỹ thuật tổng hợp
+# VSO SMPP Gateway — Tài liệu kỹ thuật tổng hợp
 
 > **Phiên bản**: 0.1.0 — đã hoàn thành Phase 1–7 (BE) + Phase 8/9 UI (chờ smoke test runtime)
 > **Cập nhật**: 2026-04-28
@@ -33,7 +33,7 @@
 
 ## 1. Tổng quan dự án
 
-**TKC SMPP Gateway** là **aggregator gateway** trung gian giữa các đối tác (`partner`) cần gửi tin nhắn (SMS / Voice OTP) và các nhà cung cấp đầu cuối (telco SMSC qua SMPP, HTTP 3rd-party, FreeSWITCH cho voice OTP nội bộ).
+**VSO SMPP Gateway** là **aggregator gateway** trung gian giữa các đối tác (`partner`) cần gửi tin nhắn (SMS / Voice OTP) và các nhà cung cấp đầu cuối (telco SMSC qua SMPP, HTTP 3rd-party, FreeSWITCH cho voice OTP nội bộ).
 
 **Vai trò chính:**
 
@@ -271,7 +271,7 @@ Các PDU không hỗ trợ (`submit_multi`, `query_sm`, `replace_sm`, `cancel_sm
 {
   "host": "smsc.telco.vn",
   "port": 2775,
-  "system_id": "tkc",
+  "system_id": "vso",
   "password": "secret",
   "system_type": "",
   "encoding": "GSM7",
@@ -485,7 +485,7 @@ DLR (Delivery Receipt) đến từ 3 nguồn — đều quy về cùng đích cu
 | `partner_api_key` | `id, partner_id (FK), key_id (UQ), secret_encrypted (bytea), nonce (bytea), status, label, last_used_at` | Credential HTTP REST cho partner |
 | `partner_rate` | `id, partner_id (FK), delivery_type, prefix, carrier, rate, currency, unit, effective_from/to` | Bảng giá charge partner (revenue side) |
 | `channel` | `id, code (UQ), name, type (HTTP_THIRD_PARTY/FREESWITCH_ESL/TELCO_SMPP), config (jsonb), delivery_type, status` | Kênh dispatch outbound |
-| `channel_rate` | `id, channel_id (FK), prefix, carrier, rate, currency, unit, effective_from/to` | Cost của TKC tới provider |
+| `channel_rate` | `id, channel_id (FK), prefix, carrier, rate, currency, unit, effective_from/to` | Cost của VSO tới provider |
 | `route` | `id, partner_id (FK), msisdn_prefix, carrier, channel_id (FK), fallback_channel_id (FK), priority, enabled` | Routing rule |
 | `message` | `id (UUID), partner_id (FK), channel_id (FK nullable), source_addr, dest_addr, content, encoding, inbound_via, state, message_id_telco, error_code, version` | Tin nhắn — main entity |
 | `dlr` | `id, message_id (FK), state, error_code, raw_payload (jsonb), source, received_at` | DLR event log |

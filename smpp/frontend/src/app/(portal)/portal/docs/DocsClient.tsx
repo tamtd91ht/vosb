@@ -48,7 +48,7 @@ export function DocsClient() {
       {/* Overview */}
       <Section title="1. Tổng quan">
         <div className="text-sm text-slate-600 space-y-2">
-          <p>TKC Gateway cung cấp 2 phương thức gửi tin nhắn:</p>
+          <p>VSO Gateway cung cấp 2 phương thức gửi tin nhắn:</p>
           <ul className="list-disc list-inside space-y-1 pl-2">
             <li><strong>HTTP API</strong> — RESTful JSON, xác thực bằng API Key + HMAC-SHA256</li>
             <li><strong>SMPP</strong> — kết nối TCP trực tiếp tới port <code className="bg-slate-100 px-1 rounded">2775</code>, xác thực bằng system_id + password</li>
@@ -69,7 +69,7 @@ export function DocsClient() {
           <CodeBlock code={`KEY_ID="ak_live_YOUR_KEY_ID"
 SECRET="YOUR_RAW_SECRET"
 TS=$(date +%s)
-BODY='{"source_addr":"TKCSMS","dest_addr":"84901234567","content":"Xin chao tu TKC Gateway!"}'
+BODY='{"source_addr":"VSOSMS","dest_addr":"84901234567","content":"Xin chao tu VSO Gateway!"}'
 # canonical string: METHOD\\nPATH\\nTIMESTAMP\\nBODY
 CANONICAL="POST\\n/api/v1/messages\\n\${TS}\\n\${BODY}"
 SIG=$(printf "%b" "\$CANONICAL" | openssl dgst -sha256 -hmac "\$SECRET" -hex | awk '{print \$2}')
@@ -92,7 +92,7 @@ curl -X POST https://gw.tkc.vn/api/v1/messages \\
         <div className="space-y-1.5">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Request body đầy đủ</p>
           <CodeBlock language="json" code={`{
-  "source_addr": "TKCSMS",        // Sender ID (≤11 ký tự alpha hoặc ≤15 số)
+  "source_addr": "VSOSMS",        // Sender ID (≤11 ký tự alpha hoặc ≤15 số)
   "dest_addr": "84901234567",     // E.164 không có '+' prefix
   "content": "Nội dung tin nhắn", // ≤160 ký tự GSM7
   "encoding": "GSM7",             // GSM7 | UCS2 | LATIN1
