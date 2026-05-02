@@ -3,9 +3,13 @@ package com.vosb.gateway.server.config;
 import com.vosb.gateway.server.http.error.ProblemJsonFailureHandler;
 import com.vosb.gateway.server.http.health.HealthHandlers;
 import io.vertx.core.Vertx;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.CorsHandler;
+
+import java.util.Arrays;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -40,8 +44,29 @@ public class VertxConfig {
                              @Qualifier("portalRouter")   Router portal,
                              @Qualifier("internalRouter") Router internal,
                              HealthHandlers health,
-                             ProblemJsonFailureHandler onFailure) {
+                             ProblemJsonFailureHandler onFailure,
+                             @Value("${app.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000}") String allowedOrigins) {
         Router root = Router.router(vertx);
+
+        // CORS — phải đặt TRƯỚC BodyHandler để preflight OPTIONS không bị consume body.
+        // Prod (Nginx reverse-proxy → same origin) không kích hoạt; chỉ cần cho dev.
+        CorsHandler cors = CorsHandler.create()
+                .allowedHeader("Authorization")
+                .allowedHeader("Content-Type")
+                .allowedHeader("X-Requested-With")
+                .allowedMethod(HttpMethod.GET)
+                .allowedMethod(HttpMethod.POST)
+                .allowedMethod(HttpMethod.PUT)
+                .allowedMethod(HttpMethod.PATCH)
+                .allowedMethod(HttpMethod.DELETE)
+                .allowedMethod(HttpMethod.OPTIONS)
+                .allowCredentials(true);
+        Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .forEach(cors::addOrigin);
+        root.route().handler(cors);
+
         root.route().handler(BodyHandler.create());
 
         // Health probes (root-level, không qua auth).
