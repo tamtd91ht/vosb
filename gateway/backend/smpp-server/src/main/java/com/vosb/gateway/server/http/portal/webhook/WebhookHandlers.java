@@ -41,7 +41,7 @@ public class WebhookHandlers {
             body = HandlerUtils.parseBody(ctx, Map.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid request body\"}");
             return;
         }
@@ -56,14 +56,14 @@ public class WebhookHandlers {
             validateWebhook(webhookNode);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }
 
         final JsonNode finalWebhook = webhookNode;
         dispatcher.executeAsync(() -> {
-            Partner partner = partnerRepo.findById(partnerId)
+            Partner partner = partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found"));
             partner.setDlrWebhook(finalWebhook);
             partnerRepo.save(partner);

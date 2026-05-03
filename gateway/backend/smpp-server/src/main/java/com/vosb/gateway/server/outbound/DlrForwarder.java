@@ -67,9 +67,10 @@ public class DlrForwarder {
             }
         }
 
-        Partner partner = partnerRepo.findById(event.partnerId()).orElse(null);
+        Partner partner = partnerRepo.findByIdAndIsDeletedFalse(event.partnerId()).orElse(null);
         if (partner == null) {
-            log.error("DLR forward: partner {} not found", event.partnerId());
+            log.info("DLR forward: partner {} not found or removed, DLR dropped for msgId={}",
+                    event.partnerId(), event.messageId());
             return;
         }
         JsonNode webhook = partner.getDlrWebhook();
@@ -109,7 +110,7 @@ public class DlrForwarder {
         String body = buildWebhookBody(event);
         HttpRequest.Builder req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("Content-Type", "application/json");
+                .header("Content-Type", "application/json; charset=utf-8");
 
         if (webhook.has("headers") && webhook.get("headers").isObject()) {
             webhook.get("headers").fields()

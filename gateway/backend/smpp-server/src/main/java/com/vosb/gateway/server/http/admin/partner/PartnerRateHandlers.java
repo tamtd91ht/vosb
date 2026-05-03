@@ -38,7 +38,7 @@ public class PartnerRateHandlers {
         long partnerId = HandlerUtils.pathLong(ctx, "partnerId");
         String deliveryTypeParam = ctx.queryParams().get("delivery_type");
         dispatcher.executeAsync(() -> {
-            partnerRepo.findById(partnerId)
+            partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + partnerId));
             List<PartnerRate> rates;
             if (deliveryTypeParam != null) {
@@ -60,13 +60,13 @@ public class PartnerRateHandlers {
             req = HandlerUtils.parseBody(ctx, RateRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }
 
         dispatcher.executeAsync(() -> {
-            Partner partner = partnerRepo.findById(partnerId)
+            Partner partner = partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + partnerId));
             PartnerRate r = new PartnerRate();
             r.setPartner(partner);
@@ -94,7 +94,7 @@ public class PartnerRateHandlers {
             req = HandlerUtils.parseBody(ctx, RateRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }

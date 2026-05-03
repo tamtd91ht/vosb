@@ -72,7 +72,7 @@ public class PortalApiKeyHandlers {
         final String finalLabel = label;
 
         dispatcher.executeAsync(() -> {
-            Partner partner = partnerRepo.findById(partnerId)
+            Partner partner = partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found"));
 
             String keyId = KEY_ID_PREFIX + randomAlphanumeric(16);

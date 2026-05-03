@@ -52,7 +52,7 @@ public class ChannelRateHandlers {
             req = HandlerUtils.parseBody(ctx, RateRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }
@@ -83,7 +83,7 @@ public class ChannelRateHandlers {
             req = HandlerUtils.parseBody(ctx, RateRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }

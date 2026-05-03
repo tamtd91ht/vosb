@@ -66,7 +66,7 @@ public class HealthHandlers {
             int code = "UP".equals(result.getString("status")) ? 200 : 503;
             ctx.response()
                     .setStatusCode(code)
-                    .putHeader("Content-Type", "application/json")
+                    .putHeader("Content-Type", "application/json; charset=utf-8")
                     .end(result.encode());
         });
     }
@@ -75,7 +75,7 @@ public class HealthHandlers {
         boolean isReady = ready.get();
         ctx.response()
                 .setStatusCode(isReady ? 200 : 503)
-                .putHeader("Content-Type", "application/json")
+                .putHeader("Content-Type", "application/json; charset=utf-8")
                 .end(new JsonObject().put("ready", isReady).encode());
     }
 

@@ -21,6 +21,9 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
 
     Page<Message> findByPartnerId(Long partnerId, Pageable pageable);
 
+    @Query("SELECT COUNT(m) FROM Message m WHERE m.partner.id = :partnerId")
+    long countByPartnerId(@Param("partnerId") Long partnerId);
+
     Page<Message> findByPartnerIdAndState(Long partnerId, MessageState state, Pageable pageable);
 
     Page<Message> findByState(MessageState state, Pageable pageable);
@@ -32,6 +35,23 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     Page<Message> findByCreatedAtBetween(Instant from, Instant to, Pageable pageable);
 
     Optional<Message> findByMessageIdTelco(String messageIdTelco);
+
+    Optional<Message> findByPartnerIdAndClientRef(Long partnerId, String clientRef);
+
+    /** Filter động cho partner search — null params bỏ qua condition tương ứng. */
+    @Query("SELECT m FROM Message m WHERE m.partner.id = :partnerId " +
+           "AND (:state IS NULL OR m.state = :state) " +
+           "AND (:destAddr IS NULL OR m.destAddr = :destAddr) " +
+           "AND (:from IS NULL OR m.createdAt >= :from) " +
+           "AND (:to IS NULL OR m.createdAt < :to) " +
+           "ORDER BY m.createdAt DESC")
+    Page<Message> searchPartnerMessages(
+            @Param("partnerId") Long partnerId,
+            @Param("state") MessageState state,
+            @Param("destAddr") String destAddr,
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to,
+            Pageable pageable);
 
     @Modifying
     @Transactional

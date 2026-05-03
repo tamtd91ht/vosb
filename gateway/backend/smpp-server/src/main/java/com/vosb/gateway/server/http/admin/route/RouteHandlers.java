@@ -72,13 +72,13 @@ public class RouteHandlers {
             validateCreate(req);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }
 
         dispatcher.executeAsync(() -> {
-            Partner partner = partnerRepo.findById(req.partnerId())
+            Partner partner = partnerRepo.findByIdAndIsDeletedFalse(req.partnerId())
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + req.partnerId()));
             Channel channel = channelRepo.findById(req.channelId())
                     .orElseThrow(() -> new EntityNotFoundException("Channel not found: " + req.channelId()));
@@ -125,7 +125,7 @@ public class RouteHandlers {
           .onFailure(err -> {
               if (err instanceof ConflictException) {
                   ctx.response().setStatusCode(409)
-                          .putHeader("Content-Type", "application/problem+json")
+                          .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                           .end("{\"status\":409,\"title\":\"Conflict\",\"detail\":\"" + escape(err.getMessage()) + "\"}");
               } else {
                   HandlerUtils.handleError(ctx, err);
@@ -164,7 +164,7 @@ public class RouteHandlers {
             req = HandlerUtils.parseBody(ctx, UpdateRouteRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid request body\"}");
             return;
         }
@@ -202,7 +202,7 @@ public class RouteHandlers {
           .onFailure(err -> {
               if (err instanceof ConflictException) {
                   ctx.response().setStatusCode(409)
-                          .putHeader("Content-Type", "application/problem+json")
+                          .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                           .end("{\"status\":409,\"title\":\"Conflict\",\"detail\":\"" + escape(err.getMessage()) + "\"}");
               } else {
                   HandlerUtils.handleError(ctx, err);

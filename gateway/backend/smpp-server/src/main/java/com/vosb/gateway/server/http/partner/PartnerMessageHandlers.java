@@ -20,6 +20,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Component
@@ -54,6 +56,7 @@ public class PartnerMessageHandlers {
         String sourceAddr = getString(body, "source_addr");
         String destAddr   = getString(body, "dest_addr");
         String content    = getString(body, "content");
+        String clientRef  = getString(body, "client_ref");
         if (sourceAddr == null || sourceAddr.isBlank()) {
             ctx.fail(400, new IllegalArgumentException("source_addr is required"));
             return;
@@ -65,6 +68,13 @@ public class PartnerMessageHandlers {
         if (content == null || content.isBlank()) {
             ctx.fail(400, new IllegalArgumentException("content is required"));
             return;
+        }
+        if (clientRef != null) {
+            if (clientRef.length() > 64) {
+                ctx.fail(400, new IllegalArgumentException("client_ref must be at most 64 characters"));
+                return;
+            }
+            if (clientRef.isBlank()) clientRef = null;
         }
 
         String normalizedDest = normalizeDestAddr(destAddr);
@@ -85,8 +95,25 @@ public class PartnerMessageHandlers {
         final String finalSource = sourceAddr.length() > 20 ? sourceAddr.substring(0, 20) : sourceAddr;
         final String finalDest   = normalizedDest;
         final MessageEncoding finalEncoding = encoding;
+        final String finalClientRef = clientRef;
 
         blocking.executeAsync(() -> {
+            // Idempotency: nếu cùng (partner_id, client_ref) đã có → trả lại message cũ.
+            if (finalClientRef != null) {
+                Optional<Message> existing =
+                        messageRepo.findByPartnerIdAndClientRef(pc.partnerId(), finalClientRef);
+                if (existing.isPresent()) {
+                    Message m = existing.get();
+                    return Map.of(
+                            "message_id", m.getId().toString(),
+                            "client_ref", finalClientRef,
+                            "status", m.getState().name(),
+                            "created_at", m.getCreatedAt().toString(),
+                            "duplicate", true
+                    );
+                }
+            }
+
             Partner partnerRef = partnerRepo.getReferenceById(pc.partnerId());
             Message msg = new Message();
             msg.setPartner(partnerRef);
@@ -96,6 +123,7 @@ public class PartnerMessageHandlers {
             msg.setEncoding(finalEncoding);
             msg.setInboundVia(InboundVia.HTTP);
             msg.setState(MessageState.RECEIVED);
+            msg.setClientRef(finalClientRef);
             Message saved = messageRepo.save(msg);
 
             InboundMessageEvent event = new InboundMessageEvent(
@@ -103,13 +131,16 @@ public class PartnerMessageHandlers {
                     content, finalEncoding.name(), "HTTP", null);
             publisher.publish(event);
 
-            return Map.of(
-                    "message_id", saved.getId().toString(),
-                    "status", "ACCEPTED",
-                    "created_at", saved.getCreatedAt().toString()
-            );
-        }).onSuccess(result -> HandlerUtils.respondJson(ctx, 202, result))
-          .onFailure(err -> HandlerUtils.handleError(ctx, err));
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("message_id", saved.getId().toString());
+            if (finalClientRef != null) resp.put("client_ref", finalClientRef);
+            resp.put("status", "ACCEPTED");
+            resp.put("created_at", saved.getCreatedAt().toString());
+            return resp;
+        }).onSuccess(result -> {
+            int status = Boolean.TRUE.equals(result.get("duplicate")) ? 200 : 202;
+            HandlerUtils.respondJson(ctx, status, result);
+        }).onFailure(err -> HandlerUtils.handleError(ctx, err));
     }
 
     // GET /api/v1/messages/:id
@@ -137,14 +168,47 @@ public class PartnerMessageHandlers {
     }
 
     // GET /api/v1/messages
+    //   ?state=RECEIVED|ROUTED|SUBMITTED|DELIVERED|FAILED
+    //   ?dest_addr=8496xxxxxxxx
+    //   ?from=2026-01-01T00:00:00Z &to=2026-12-31T23:59:59Z
+    //   ?page=0 &size=20 (max 100)
     public void list(RoutingContext ctx) {
         PartnerContext pc = ApiKeyHmacAuthHandler.from(ctx);
         int page = HandlerUtils.getPage(ctx);
         int size = HandlerUtils.getSize(ctx);
 
+        // Optional filters
+        MessageState state = null;
+        String stateParam = ctx.queryParams().get("state");
+        if (stateParam != null && !stateParam.isBlank()) {
+            try {
+                state = MessageState.valueOf(stateParam.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                ctx.fail(400, new IllegalArgumentException(
+                        "state must be one of RECEIVED/ROUTED/SUBMITTED/DELIVERED/FAILED"));
+                return;
+            }
+        }
+
+        String destAddr = ctx.queryParams().get("dest_addr");
+        if (destAddr != null) {
+            destAddr = destAddr.isBlank() ? null : normalizeDestAddr(destAddr);
+        }
+
+        OffsetDateTime from = parseIso(ctx, "from");
+        if (ctx.response().ended()) return;
+        OffsetDateTime to = parseIso(ctx, "to");
+        if (ctx.response().ended()) return;
+
+        final MessageState fState = state;
+        final String fDest = destAddr;
+        final OffsetDateTime fFrom = from;
+        final OffsetDateTime fTo = to;
+
         blocking.executeAsync(() -> {
             PageRequest pr = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-            Page<Message> paged = messageRepo.findByPartnerId(pc.partnerId(), pr);
+            Page<Message> paged = messageRepo.searchPartnerMessages(
+                    pc.partnerId(), fState, fDest, fFrom, fTo, pr);
             List<Map<String, Object>> items = paged.getContent().stream()
                     .map(this::toResponse)
                     .toList();
@@ -158,15 +222,31 @@ public class PartnerMessageHandlers {
           .onFailure(err -> HandlerUtils.handleError(ctx, err));
     }
 
+    private OffsetDateTime parseIso(RoutingContext ctx, String name) {
+        String v = ctx.queryParams().get(name);
+        if (v == null || v.isBlank()) return null;
+        try {
+            return OffsetDateTime.parse(v);
+        } catch (DateTimeParseException e) {
+            ctx.response().setStatusCode(400)
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
+                    .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\""
+                            + name + " must be ISO-8601 (vd 2026-01-01T00:00:00Z)\"}");
+            return null;
+        }
+    }
+
     private Map<String, Object> toResponse(Message msg) {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("message_id", msg.getId().toString());
+        if (msg.getClientRef() != null) r.put("client_ref", msg.getClientRef());
         r.put("state", msg.getState().name());
         r.put("source_addr", msg.getSourceAddr());
         r.put("dest_addr", msg.getDestAddr());
         r.put("encoding", msg.getEncoding().name());
         r.put("inbound_via", msg.getInboundVia().name());
         r.put("error_code", msg.getErrorCode());
+        r.put("message_id_telco", msg.getMessageIdTelco());
         r.put("created_at", msg.getCreatedAt().toString());
         r.put("updated_at", msg.getUpdatedAt().toString());
         return r;

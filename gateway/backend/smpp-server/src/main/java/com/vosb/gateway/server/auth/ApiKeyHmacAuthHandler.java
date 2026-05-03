@@ -1,7 +1,9 @@
 package com.vosb.gateway.server.auth;
 
+import com.vosb.gateway.core.domain.Partner;
 import com.vosb.gateway.core.domain.PartnerApiKey;
 import com.vosb.gateway.core.domain.enums.KeyStatus;
+import com.vosb.gateway.core.domain.enums.PartnerStatus;
 import com.vosb.gateway.core.repository.PartnerApiKeyRepository;
 import com.vosb.gateway.core.security.HmacSigner;
 import com.vosb.gateway.core.security.SecretCipher;
@@ -57,6 +59,15 @@ public class ApiKeyHmacAuthHandler implements Handler<RoutingContext> {
             PartnerApiKey apiKey = apiKeyRepo.findByKeyIdAndStatus(keyId, KeyStatus.ACTIVE)
                     .orElseThrow(() -> new SecurityException("Invalid or revoked API key"));
 
+            // Block API key nếu partner đã soft-delete hoặc bị tạm dừng.
+            Partner partner = apiKey.getPartner();
+            if (partner.isDeleted()) {
+                throw new SecurityException("Partner has been removed");
+            }
+            if (partner.getStatus() != PartnerStatus.ACTIVE) {
+                throw new SecurityException("Partner is " + partner.getStatus().name().toLowerCase());
+            }
+
             byte[] rawSecret = secretCipher.decrypt(apiKey.getSecretEncrypted(), apiKey.getNonce());
 
             byte[] body = ctx.body().buffer() != null ? ctx.body().buffer().getBytes() : new byte[0];
@@ -73,7 +84,7 @@ public class ApiKeyHmacAuthHandler implements Handler<RoutingContext> {
                 throw new SecurityException("Replay detected");
             }
 
-            return new PartnerContext(apiKey.getPartner().getId(), keyId);
+            return new PartnerContext(partner.getId(), keyId);
         }, false).onSuccess(pc -> {
             ctx.data().put(PARTNER_CONTEXT_KEY, pc);
             ctx.next();
@@ -98,7 +109,7 @@ public class ApiKeyHmacAuthHandler implements Handler<RoutingContext> {
 
     private static void unauthorized(RoutingContext ctx, String detail) {
         ctx.response().setStatusCode(401)
-                .putHeader("Content-Type", "application/problem+json")
+                .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                 .end("{\"status\":401,\"title\":\"Unauthorized\",\"detail\":\"" + escape(detail) + "\"}");
     }
 

@@ -45,7 +45,7 @@ public class ProblemJsonFailureHandler implements Handler<RoutingContext> {
         }
         ctx.response()
                 .setStatusCode(code)
-                .putHeader("Content-Type", "application/problem+json")
+                .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                 .end(problem.encode());
     }
 

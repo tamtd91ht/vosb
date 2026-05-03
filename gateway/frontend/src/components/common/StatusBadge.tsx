@@ -1,63 +1,101 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const statusConfig: Record<string, { label: string; className: string }> = {
+const statusConfig: Record<
+  string,
+  { label: string; className: string; dot: string; pulse?: boolean }
+> = {
   ACTIVE: {
     label: "Hoạt động",
-    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+    dot: "bg-emerald-500",
+    pulse: true,
   },
   SUSPENDED: {
     label: "Tạm dừng",
-    className: "bg-amber-100 text-amber-700 border-amber-200",
+    className: "bg-amber-50 text-amber-700 border-amber-200/70",
+    dot: "bg-amber-500",
   },
   DISABLED: {
     label: "Vô hiệu",
-    className: "bg-gray-100 text-gray-600 border-gray-200",
+    className: "bg-slate-100 text-slate-600 border-slate-200/70",
+    dot: "bg-slate-400",
   },
   REVOKED: {
     label: "Đã thu hồi",
-    className: "bg-red-100 text-red-700 border-red-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200/70",
+    dot: "bg-rose-500",
   },
   RECEIVED: {
     label: "Nhận",
-    className: "bg-blue-100 text-blue-700 border-blue-200",
+    className: "bg-sky-50 text-sky-700 border-sky-200/70",
+    dot: "bg-sky-500",
+    pulse: true,
   },
   ROUTED: {
     label: "Định tuyến",
-    className: "bg-indigo-100 text-indigo-700 border-indigo-200",
+    className: "bg-indigo-50 text-indigo-700 border-indigo-200/70",
+    dot: "bg-indigo-500",
+    pulse: true,
   },
   SUBMITTED: {
     label: "Đã gửi",
-    className: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    className: "bg-violet-50 text-violet-700 border-violet-200/70",
+    dot: "bg-violet-500",
+    pulse: true,
   },
   DELIVERED: {
     label: "Thành công",
-    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+    dot: "bg-emerald-500",
   },
   FAILED: {
     label: "Thất bại",
-    className: "bg-red-100 text-red-700 border-red-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200/70",
+    dot: "bg-rose-500",
   },
   ADMIN: {
     label: "Admin",
-    className: "bg-violet-100 text-violet-700 border-violet-200",
+    className: "bg-violet-50 text-violet-700 border-violet-200/70",
+    dot: "bg-violet-500",
   },
   PARTNER: {
     label: "Partner",
-    className: "bg-blue-100 text-blue-700 border-blue-200",
+    className: "bg-sky-50 text-sky-700 border-sky-200/70",
+    dot: "bg-sky-500",
   },
 };
 
 export function StatusBadge({ status }: { status: string }) {
   const cfg = statusConfig[status] ?? {
     label: status,
-    className: "bg-gray-100 text-gray-600 border-gray-200",
+    className: "bg-slate-100 text-slate-600 border-slate-200/70",
+    dot: "bg-slate-400",
   };
   return (
     <Badge
       variant="outline"
-      className={cn("text-xs font-medium border", cfg.className)}
+      className={cn(
+        "text-[11px] font-semibold border gap-1.5 pl-1.5 pr-2 h-5.5 inline-flex items-center",
+        cfg.className
+      )}
     >
+      <span className="relative flex h-1.5 w-1.5">
+        {cfg.pulse && (
+          <span
+            className={cn(
+              "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+              cfg.dot
+            )}
+          />
+        )}
+        <span
+          className={cn(
+            "relative inline-flex rounded-full h-1.5 w-1.5",
+            cfg.dot
+          )}
+        />
+      </span>
       {cfg.label}
     </Badge>
   );

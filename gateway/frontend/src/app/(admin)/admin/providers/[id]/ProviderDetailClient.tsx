@@ -11,6 +11,7 @@ import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
   ArrowLeft,
+  Activity,
   Loader2,
   Pencil,
   Plus,
@@ -35,6 +36,7 @@ import {
   ChannelType,
   ChannelStats,
   ChannelRate,
+  DeliveryType,
   RateUnit,
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -135,6 +137,7 @@ export function ProviderDetailClient({ id }: { id: number }) {
   // ---- Edit channel state ----
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editDeliveryType, setEditDeliveryType] = useState<DeliveryType>("SMS");
   const [editConfig, setEditConfig] = useState("{}");
   const [editConfigError, setEditConfigError] = useState<string | null>(null);
 
@@ -190,6 +193,7 @@ export function ProviderDetailClient({ id }: { id: number }) {
   function openEdit() {
     if (!channel) return;
     setEditName(channel.name);
+    setEditDeliveryType(channel.delivery_type);
     setEditConfig(JSON.stringify(channel.config, null, 2));
     setEditConfigError(null);
     setEditOpen(true);
@@ -217,8 +221,47 @@ export function ProviderDetailClient({ id }: { id: number }) {
       setEditConfigError("Config JSON không hợp lệ");
       return;
     }
-    editMutation.mutate({ name: editName, config: parsedConfig });
+    editMutation.mutate({
+      name: editName,
+      deliveryType: editDeliveryType,
+      config: parsedConfig,
+    });
   }
+
+  // ---- Test ping ----
+  type TestPingResult = {
+    reachable?: boolean;
+    latency_ms?: number;
+    supported?: boolean;
+    message?: string;
+  };
+  const testPingMutation = useMutation<TestPingResult>({
+    mutationFn: () =>
+      apiClient(token, `/api/admin/channels/${id}/test-ping`, {
+        method: "POST",
+      }),
+    onSuccess: (data) => {
+      if (data?.reachable) {
+        toast.success(
+          `Reachable · ${data.latency_ms ?? 0}ms${
+            data.message ? ` — ${data.message}` : ""
+          }`
+        );
+      } else if (data?.reachable === false) {
+        toast.error(data?.message ?? "Không kết nối được");
+      } else {
+        toast.message(data?.message ?? "Đã test", {
+          description:
+            data?.supported === false
+              ? "Test-ping chưa hỗ trợ cho loại kênh này ở phase hiện tại."
+              : undefined,
+        });
+      }
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi");
+    },
+  });
 
   // ---- Delete channel ----
   const deleteMutation = useMutation({
@@ -483,7 +526,19 @@ export function ProviderDetailClient({ id }: { id: number }) {
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    disabled={testPingMutation.isPending}
+                    onClick={() => testPingMutation.mutate()}
+                  >
+                    {testPingMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : (
+                      <Activity className="w-4 h-4 mr-2" />
+                    )}
+                    Test ping
+                  </Button>
                   {channel.status === "ACTIVE" ? (
                     <Button
                       variant="outline"
@@ -996,6 +1051,24 @@ export function ProviderDetailClient({ id }: { id: number }) {
                 onChange={(e) => setEditName(e.target.value)}
                 placeholder="Tên hiển thị"
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Loại tin *</Label>
+              <Select
+                value={editDeliveryType}
+                onValueChange={(v) => setEditDeliveryType(v as DeliveryType)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SMS">SMS</SelectItem>
+                  <SelectItem value="VOICE_OTP">Voice OTP</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400">
+                Loại tin sẽ được dùng để khớp với bảng giá partner và route.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-config">Config (JSON)</Label>

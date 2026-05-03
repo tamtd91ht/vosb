@@ -49,7 +49,7 @@ public class DlrIngressHandler {
         String secret = ctx.request().getHeader("X-Internal-Secret");
         if (!internalSecret.equals(secret)) {
             ctx.response().setStatusCode(401)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":401,\"title\":\"Unauthorized\",\"detail\":\"Invalid internal secret\"}");
             return;
         }
@@ -59,7 +59,7 @@ public class DlrIngressHandler {
             body = HandlerUtils.parseBody(ctx, JsonNode.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid JSON body\"}");
             return;
         }
@@ -70,7 +70,7 @@ public class DlrIngressHandler {
 
         if (telcoMsgId == null || stateStr == null) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"telco_message_id and state are required\"}");
             return;
         }

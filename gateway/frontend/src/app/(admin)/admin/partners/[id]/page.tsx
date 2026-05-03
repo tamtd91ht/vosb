@@ -3,10 +3,11 @@ import { PartnerDetailClient } from "./PartnerDetailClient";
 
 export const metadata: Metadata = { title: "VOSB Gateway — Chi tiết đối tác" };
 
-export default function PartnerDetailPage({
+export default async function PartnerDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <PartnerDetailClient id={Number(params.id)} />;
+  const { id } = await params;
+  return <PartnerDetailClient id={Number(id)} />;
 }

@@ -23,7 +23,7 @@ public final class HandlerUtils {
             String json = MAPPER.writeValueAsString(body);
             ctx.response()
                     .setStatusCode(status)
-                    .putHeader("Content-Type", "application/json")
+                    .putHeader("Content-Type", "application/json; charset=utf-8")
                     .end(json);
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize response", e);
@@ -62,7 +62,7 @@ public final class HandlerUtils {
         if (err instanceof IllegalArgumentException) {
             ctx.response()
                     .setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\""
                             + escape(err.getMessage()) + "\"}");
         } else if (err instanceof jakarta.persistence.EntityNotFoundException) {

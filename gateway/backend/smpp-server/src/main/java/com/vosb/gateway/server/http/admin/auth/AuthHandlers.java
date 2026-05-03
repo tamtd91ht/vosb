@@ -49,7 +49,7 @@ public class AuthHandlers {
             req = HandlerUtils.parseBody(ctx, LoginRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid request body\"}");
             return;
         }
@@ -76,7 +76,7 @@ public class AuthHandlers {
         }).onSuccess(result -> {
             if (result == null) {
                 ctx.response().setStatusCode(401)
-                        .putHeader("Content-Type", "application/problem+json")
+                        .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                         .end("{\"status\":401,\"title\":\"Unauthorized\",\"detail\":\"Invalid username or password\"}");
             } else {
                 HandlerUtils.respondJson(ctx, 200, result);
@@ -91,7 +91,7 @@ public class AuthHandlers {
             req = HandlerUtils.parseBody(ctx, RefreshRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid request body\"}");
             return;
         }
@@ -113,14 +113,14 @@ public class AuthHandlers {
         }).onSuccess(result -> {
             if (result == null) {
                 ctx.response().setStatusCode(401)
-                        .putHeader("Content-Type", "application/problem+json")
+                        .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                         .end("{\"status\":401,\"title\":\"Unauthorized\",\"detail\":\"Refresh token expired or invalid\"}");
             } else {
                 HandlerUtils.respondJson(ctx, 200, result);
             }
         }).onFailure(err -> {
             ctx.response().setStatusCode(401)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":401,\"title\":\"Unauthorized\",\"detail\":\"Refresh token expired or invalid\"}");
         });
     }

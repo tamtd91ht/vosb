@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vosb.gateway.core.domain.Partner;
 import com.vosb.gateway.core.domain.enums.PartnerStatus;
+import com.vosb.gateway.core.repository.AdminUserRepository;
+import com.vosb.gateway.core.repository.MessageRepository;
 import com.vosb.gateway.core.repository.PartnerRepository;
 import com.vosb.gateway.server.http.admin.dto.PageResponse;
 import com.vosb.gateway.server.http.common.BlockingDispatcher;
@@ -15,7 +17,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -27,10 +28,17 @@ public class PartnerHandlers {
     private static final List<String> ALLOWED_WEBHOOK_METHODS = List.of("GET", "POST", "PUT", "PATCH");
 
     private final PartnerRepository partnerRepo;
+    private final MessageRepository messageRepo;
+    private final AdminUserRepository adminUserRepo;
     private final BlockingDispatcher dispatcher;
 
-    public PartnerHandlers(PartnerRepository partnerRepo, BlockingDispatcher dispatcher) {
+    public PartnerHandlers(PartnerRepository partnerRepo,
+                           MessageRepository messageRepo,
+                           AdminUserRepository adminUserRepo,
+                           BlockingDispatcher dispatcher) {
         this.partnerRepo = partnerRepo;
+        this.messageRepo = messageRepo;
+        this.adminUserRepo = adminUserRepo;
         this.dispatcher = dispatcher;
     }
 
@@ -42,7 +50,7 @@ public class PartnerHandlers {
             validateCreate(req);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }
@@ -63,6 +71,7 @@ public class PartnerHandlers {
     }
 
     // GET /api/admin/partners
+    // Mặc định ẩn các đối tác đã soft-delete (is_deleted = true).
     public void list(RoutingContext ctx) {
         int page = HandlerUtils.getPage(ctx);
         int size = HandlerUtils.getSize(ctx);
@@ -73,9 +82,9 @@ public class PartnerHandlers {
             Page<Partner> paged;
             if (statusParam != null && !statusParam.isBlank()) {
                 PartnerStatus status = PartnerStatus.valueOf(statusParam.toUpperCase());
-                paged = partnerRepo.findByStatus(status, pr);
+                paged = partnerRepo.findByIsDeletedFalseAndStatus(status, pr);
             } else {
-                paged = partnerRepo.findAll(pr);
+                paged = partnerRepo.findByIsDeletedFalse(pr);
             }
             List<Map<String, Object>> items = paged.getContent().stream().map(this::toResponse).toList();
             return PageResponse.of(items, paged.getTotalElements(), page, size);
@@ -87,7 +96,7 @@ public class PartnerHandlers {
     public void get(RoutingContext ctx) {
         long id = HandlerUtils.pathLong(ctx, "id");
         dispatcher.executeAsync(() -> {
-            Partner p = partnerRepo.findById(id)
+            Partner p = partnerRepo.findByIdAndIsDeletedFalse(id)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + id));
             return toResponse(p);
         }).onSuccess(result -> HandlerUtils.respondJson(ctx, 200, result))
@@ -102,13 +111,13 @@ public class PartnerHandlers {
             req = HandlerUtils.parseBody(ctx, UpdatePartnerRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid request body\"}");
             return;
         }
 
         dispatcher.executeAsync(() -> {
-            Partner p = partnerRepo.findById(id)
+            Partner p = partnerRepo.findByIdAndIsDeletedFalse(id)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + id));
             if (req.name() != null) p.setName(req.name());
             if (req.status() != null) p.setStatus(PartnerStatus.valueOf(req.status().toUpperCase()));
@@ -121,14 +130,37 @@ public class PartnerHandlers {
           .onFailure(err -> HandlerUtils.handleError(ctx, err));
     }
 
-    // DELETE /api/admin/partners/:id  (soft-delete → SUSPENDED)
+    // DELETE /api/admin/partners/:id
+    //   ?hard=true  → hard delete (CASCADE smpp_account/api_key/route/partner_rate);
+    //                 returns 409 if any message or admin_user still references the partner.
+    //   default     → soft delete: set is_deleted = true.
+    //                 Đối tác bị ẩn khỏi list/get/update; dữ liệu vẫn còn trong DB cho audit.
     public void delete(RoutingContext ctx) {
         long id = HandlerUtils.pathLong(ctx, "id");
+        boolean hard = "true".equalsIgnoreCase(ctx.queryParams().get("hard"));
+
         dispatcher.executeAsync(() -> {
             Partner p = partnerRepo.findById(id)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + id));
-            p.setStatus(PartnerStatus.SUSPENDED);
-            partnerRepo.save(p);
+            if (hard) {
+                long msgCount = messageRepo.countByPartnerId(id);
+                long userCount = adminUserRepo.countByPartnerId(id);
+                if (msgCount > 0 || userCount > 0) {
+                    throw new IllegalStateException(
+                            "Không thể xóa đối tác '" + p.getCode() + "': còn "
+                                    + msgCount + " tin nhắn, "
+                                    + userCount + " tài khoản tham chiếu. "
+                                    + "Hãy tạm dừng hoặc xóa các phụ thuộc trước."
+                    );
+                }
+                partnerRepo.deleteById(id);
+            } else {
+                if (p.isDeleted()) {
+                    return null; // idempotent
+                }
+                p.setDeleted(true);
+                partnerRepo.save(p);
+            }
             return null;
         }).onSuccess(ignored -> ctx.response().setStatusCode(204).end())
           .onFailure(err -> HandlerUtils.handleError(ctx, err));

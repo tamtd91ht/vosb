@@ -48,13 +48,13 @@ public class SmppAccountHandlers {
             if (req.password() == null || req.password().isBlank()) throw new IllegalArgumentException("password required");
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }
 
         dispatcher.executeAsync(() -> {
-            Partner partner = partnerRepo.findById(partnerId)
+            Partner partner = partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + partnerId));
             if (accountRepo.existsBySystemId(req.systemId())) {
                 throw new IllegalArgumentException("system_id already exists: " + req.systemId());
@@ -78,7 +78,7 @@ public class SmppAccountHandlers {
     public void list(RoutingContext ctx) {
         long partnerId = HandlerUtils.pathLong(ctx, "partnerId");
         dispatcher.executeAsync(() -> {
-            partnerRepo.findById(partnerId)
+            partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + partnerId));
             List<Map<String, Object>> items = accountRepo.findByPartnerId(partnerId)
                     .stream().map(this::toResponse).toList();

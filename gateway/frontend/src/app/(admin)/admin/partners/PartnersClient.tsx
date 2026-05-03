@@ -9,7 +9,16 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
-import { Plus, Loader2, ExternalLink, Ban, Users2 } from "lucide-react";
+import {
+  Plus,
+  Loader2,
+  ExternalLink,
+  Ban,
+  Users2,
+  Pencil,
+  CheckCircle2,
+  Trash2,
+} from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api";
 import { Partner, PageResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -50,8 +59,10 @@ export function PartnersClient() {
   const qc = useQueryClient();
 
   const [page, setPage] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Partner | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<Partner | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Partner | null>(null);
 
   const { data, isLoading } = useQuery<PageResponse<Partner>>({
     queryKey: ["partners", page],
@@ -82,8 +93,21 @@ export function PartnersClient() {
     onSuccess: () => {
       toast.success("Tạo đối tác thành công");
       qc.invalidateQueries({ queryKey: ["partners"] });
-      setCreateOpen(false);
-      reset();
+      resetDialog();
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: object }) =>
+      apiClient(token, `/api/admin/partners/${id}`, { method: "PUT", body }),
+    onSuccess: () => {
+      toast.success("Cập nhật đối tác thành công");
+      qc.invalidateQueries({ queryKey: ["partners"] });
+      qc.invalidateQueries({ queryKey: ["partner"] });
+      resetDialog();
     },
     onError: (err: unknown) => {
       toast.error(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi");
@@ -92,7 +116,10 @@ export function PartnersClient() {
 
   const suspendMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient(token, `/api/admin/partners/${id}`, { method: "DELETE" }),
+      apiClient(token, `/api/admin/partners/${id}`, {
+        method: "PUT",
+        body: { status: "SUSPENDED" },
+      }),
     onSuccess: () => {
       toast.success("Đã tạm dừng đối tác");
       qc.invalidateQueries({ queryKey: ["partners"] });
@@ -103,30 +130,101 @@ export function PartnersClient() {
     },
   });
 
+  const reactivateMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiClient(token, `/api/admin/partners/${id}`, {
+        method: "PUT",
+        body: { status: "ACTIVE" },
+      }),
+    onSuccess: () => {
+      toast.success("Đã kích hoạt đối tác");
+      qc.invalidateQueries({ queryKey: ["partners"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiClient(token, `/api/admin/partners/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Đã xóa đối tác");
+      qc.invalidateQueries({ queryKey: ["partners"] });
+      setDeleteTarget(null);
+    },
+    onError: (err: unknown) => {
+      toast.error(
+        err instanceof ApiError ? err.detail : "Không thể xóa đối tác"
+      );
+    },
+  });
+
+  function openCreate() {
+    setEditTarget(null);
+    reset({ code: "", name: "", dlr_url: "", dlr_method: "POST" });
+    setDialogOpen(true);
+  }
+
+  function openEdit(p: Partner) {
+    setEditTarget(p);
+    reset({
+      code: p.code,
+      name: p.name,
+      dlr_url: p.dlr_webhook?.url ?? "",
+      dlr_method: (p.dlr_webhook?.method ?? "POST") as
+        | "GET"
+        | "POST"
+        | "PUT"
+        | "PATCH",
+    });
+    setDialogOpen(true);
+  }
+
+  function resetDialog() {
+    setDialogOpen(false);
+    setEditTarget(null);
+    reset();
+  }
+
   const onSubmit = (formData: PartnerForm) => {
-    const body: Record<string, unknown> = {
-      code: formData.code.toUpperCase(),
-      name: formData.name,
-    };
-    if (formData.dlr_url) {
-      body.dlr_webhook = {
-        url: formData.dlr_url,
-        method: formData.dlr_method ?? "POST",
+    if (editTarget) {
+      const body: Record<string, unknown> = {
+        name: formData.name,
+        dlr_webhook: formData.dlr_url
+          ? {
+              url: formData.dlr_url,
+              method: formData.dlr_method ?? "POST",
+            }
+          : null,
       };
+      updateMutation.mutate({ id: editTarget.id, body });
+    } else {
+      const body: Record<string, unknown> = {
+        code: formData.code.toUpperCase(),
+        name: formData.name,
+      };
+      if (formData.dlr_url) {
+        body.dlr_webhook = {
+          url: formData.dlr_url,
+          method: formData.dlr_method ?? "POST",
+        };
+      }
+      createMutation.mutate(body);
     }
-    createMutation.mutate(body);
   };
 
   const partners = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / 20);
+  const mutPending = createMutation.isPending || updateMutation.isPending;
 
   return (
     <div>
       {/* Actions */}
       <div className="flex justify-end mb-4">
         <Button
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreate}
           className="bg-indigo-600 hover:bg-indigo-500 text-white"
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -148,7 +246,7 @@ export function PartnersClient() {
               description="Thêm đối tác đầu tiên để bắt đầu nhận tin nhắn"
               action={
                 <Button
-                  onClick={() => setCreateOpen(true)}
+                  onClick={openCreate}
                   className="bg-indigo-600 hover:bg-indigo-500 text-white"
                 >
                   <Plus className="w-4 h-4 mr-2" /> Thêm đối tác
@@ -206,7 +304,7 @@ export function PartnersClient() {
                         })}
                       </td>
                       <td className="px-6 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1">
                           <Link href={`/admin/partners/${p.id}`}>
                             <Button
                               variant="ghost"
@@ -217,17 +315,50 @@ export function PartnersClient() {
                               Chi tiết
                             </Button>
                           </Link>
-                          {p.status === "ACTIVE" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-gray-600 hover:text-indigo-700 hover:bg-indigo-50"
+                            onClick={() => openEdit(p)}
+                          >
+                            <Pencil className="w-3.5 h-3.5 mr-1" />
+                            Sửa
+                          </Button>
+                          {p.status === "ACTIVE" ? (
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                              className="h-7 px-2 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50"
                               onClick={() => setSuspendTarget(p)}
                             >
                               <Ban className="w-3.5 h-3.5 mr-1" />
                               Tạm dừng
                             </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                              disabled={reactivateMutation.isPending}
+                              onClick={() => reactivateMutation.mutate(p.id)}
+                            >
+                              {reactivateMutation.isPending ? (
+                                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              )}
+                              Kích hoạt
+                            </Button>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => setDeleteTarget(p)}
+                            title="Xóa đối tác"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -273,14 +404,18 @@ export function PartnersClient() {
         </CardContent>
       </Card>
 
-      {/* Create Dialog */}
+      {/* Create / Edit Dialog */}
       <Dialog
-        open={createOpen}
-        onOpenChange={(o) => !o && setCreateOpen(false)}
+        open={dialogOpen}
+        onOpenChange={(o) => {
+          if (!o) resetDialog();
+        }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" key={editTarget?.id ?? "create"}>
           <DialogHeader>
-            <DialogTitle>Thêm đối tác mới</DialogTitle>
+            <DialogTitle>
+              {editTarget ? `Sửa đối tác "${editTarget.name}"` : "Thêm đối tác mới"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-2">
             <div className="grid grid-cols-2 gap-4">
@@ -290,9 +425,19 @@ export function PartnersClient() {
                   {...register("code")}
                   placeholder="VD: PARTNER_01"
                   style={{ textTransform: "uppercase" }}
+                  disabled={!!editTarget}
+                  readOnly={!!editTarget}
+                  className={
+                    editTarget ? "bg-gray-50 cursor-not-allowed" : undefined
+                  }
                 />
                 {errors.code && (
                   <p className="text-red-500 text-xs">{errors.code.message}</p>
+                )}
+                {editTarget && (
+                  <p className="text-[10px] text-gray-400">
+                    Code không đổi được sau khi tạo
+                  </p>
                 )}
               </div>
               <div className="space-y-1.5">
@@ -319,12 +464,19 @@ export function PartnersClient() {
                     {errors.dlr_url.message}
                   </p>
                 )}
+                {editTarget && (
+                  <p className="text-[10px] text-gray-400">
+                    Để trống URL sẽ xóa cấu hình webhook DLR.
+                  </p>
+                )}
               </div>
               {watchedDlrUrl && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">Method</Label>
                   <Select
-                    defaultValue="POST"
+                    defaultValue={
+                      editTarget?.dlr_webhook?.method ?? "POST"
+                    }
                     onValueChange={(v) =>
                       setValue(
                         "dlr_method",
@@ -350,22 +502,19 @@ export function PartnersClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setCreateOpen(false);
-                  reset();
-                }}
+                onClick={resetDialog}
               >
                 Hủy
               </Button>
               <Button
                 type="submit"
-                disabled={isSubmitting || createMutation.isPending}
+                disabled={isSubmitting || mutPending}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white"
               >
-                {(isSubmitting || createMutation.isPending) && (
+                {(isSubmitting || mutPending) && (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
                 )}
-                Tạo đối tác
+                {editTarget ? "Lưu thay đổi" : "Tạo đối tác"}
               </Button>
             </div>
           </form>
@@ -381,8 +530,25 @@ export function PartnersClient() {
         }
         loading={suspendMutation.isPending}
         title={`Tạm dừng đối tác "${suspendTarget?.name}"?`}
-        description="Đối tác sẽ không thể gửi tin nhắn sau khi bị tạm dừng."
+        description="Đối tác sẽ không thể gửi tin nhắn sau khi bị tạm dừng. Bạn vẫn có thể kích hoạt lại sau."
         confirmLabel="Tạm dừng"
+        variant="destructive"
+      />
+
+      {/* Soft Delete Dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() =>
+          deleteTarget && deleteMutation.mutate(deleteTarget.id)
+        }
+        loading={deleteMutation.isPending}
+        title={`Xóa đối tác "${deleteTarget?.name}"?`}
+        description={
+          `Đối tác sẽ bị ẩn khỏi danh sách quản trị. ` +
+          `Dữ liệu (tin nhắn, DLR, audit log, …) vẫn được giữ nguyên trong cơ sở dữ liệu để đối soát sau này.`
+        }
+        confirmLabel="Xóa"
         variant="destructive"
       />
     </div>

@@ -35,6 +35,9 @@ public class Partner {
     @Column(nullable = false, precision = 18, scale = 4)
     private BigDecimal balance = BigDecimal.ZERO;
 
+    @Column(name = "is_deleted", nullable = false)
+    private boolean isDeleted = false;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -54,6 +57,8 @@ public class Partner {
     public void setDlrWebhook(JsonNode dlrWebhook) { this.dlrWebhook = dlrWebhook; }
     public BigDecimal getBalance() { return balance; }
     public void setBalance(BigDecimal balance) { this.balance = balance; }
+    public boolean isDeleted() { return isDeleted; }
+    public void setDeleted(boolean deleted) { this.isDeleted = deleted; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

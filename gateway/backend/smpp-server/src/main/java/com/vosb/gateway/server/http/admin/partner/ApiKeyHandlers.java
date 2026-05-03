@@ -53,7 +53,7 @@ public class ApiKeyHandlers {
         final String finalLabel = label;
 
         dispatcher.executeAsync(() -> {
-            Partner partner = partnerRepo.findById(partnerId)
+            Partner partner = partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + partnerId));
 
             String keyId = KEY_ID_PREFIX + randomAlphanumeric(16);
@@ -84,7 +84,7 @@ public class ApiKeyHandlers {
     public void list(RoutingContext ctx) {
         long partnerId = HandlerUtils.pathLong(ctx, "partnerId");
         dispatcher.executeAsync(() -> {
-            partnerRepo.findById(partnerId)
+            partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + partnerId));
             List<Map<String, Object>> items = apiKeyRepo.findByPartnerId(partnerId)
                     .stream().map(this::toListResponse).toList();

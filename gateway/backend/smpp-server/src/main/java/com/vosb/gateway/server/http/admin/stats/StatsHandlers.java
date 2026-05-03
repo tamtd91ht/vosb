@@ -43,7 +43,7 @@ public class StatsHandlers {
                 ? ctx.queryParams().get("granularity") : "hour";
         if (!granularity.equals("hour") && !granularity.equals("day")) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"granularity must be 'hour' or 'day'\"}");
             return;
         }
@@ -57,7 +57,7 @@ public class StatsHandlers {
             to = toStr != null ? Instant.parse(toStr) : Instant.now();
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid date format, use ISO-8601\"}");
             return;
         }

@@ -56,7 +56,7 @@ public class PortalSmppHandlers {
             body = HandlerUtils.parseBody(ctx, Map.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid request body\"}");
             return;
         }
@@ -64,7 +64,7 @@ public class PortalSmppHandlers {
         String newPassword = body.get("new_password") != null ? body.get("new_password").toString() : null;
         if (newPassword == null || newPassword.length() < 8) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"new_password must be at least 8 characters\"}");
             return;
         }

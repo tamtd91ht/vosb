@@ -6,7 +6,12 @@ import { MessageDetailClient } from "./MessageDetailClient";
 
 export const metadata: Metadata = { title: "Chi tiết tin nhắn — VOSB Gateway Portal" };
 
-export default function MessageDetailPage({ params }: { params: { id: string } }) {
+export default async function MessageDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
@@ -14,8 +19,8 @@ export default function MessageDetailPage({ params }: { params: { id: string } }
           <ArrowLeft className="w-4 h-4" /> Quay lại
         </Link>
       </div>
-      <PageHeader title="Chi tiết tin nhắn" description={`ID: ${params.id}`} />
-      <MessageDetailClient id={params.id} />
+      <PageHeader title="Chi tiết tin nhắn" description={`ID: ${id}`} />
+      <MessageDetailClient id={id} />
     </div>
   );
 }

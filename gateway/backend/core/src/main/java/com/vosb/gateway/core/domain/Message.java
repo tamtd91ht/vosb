@@ -53,6 +53,9 @@ public class Message {
     @Column(length = 64)
     private String errorCode;
 
+    @Column(name = "client_ref", length = 64)
+    private String clientRef;
+
     @Version
     @Column(nullable = false)
     private int version;
@@ -86,6 +89,8 @@ public class Message {
     public void setMessageIdTelco(String messageIdTelco) { this.messageIdTelco = messageIdTelco; }
     public String getErrorCode() { return errorCode; }
     public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
+    public String getClientRef() { return clientRef; }
+    public void setClientRef(String clientRef) { this.clientRef = clientRef; }
     public int getVersion() { return version; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }

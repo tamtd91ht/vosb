@@ -174,3 +174,11 @@ export type TimeseriesResponse = {
   to: string;
   series: TimeseriesPoint[];
 };
+
+export type SmppSession = {
+  session_id: string;
+  system_id: string;
+  bind_type: string;
+  remote_ip: string;
+  bound_at: string;
+};

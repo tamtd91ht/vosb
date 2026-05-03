@@ -13,15 +13,21 @@ public class PartnerRouterFactory {
     @Bean("partnerRouter")
     public Router partnerRouter(Vertx vertx,
                                 ApiKeyHmacAuthHandler hmacAuth,
-                                PartnerMessageHandlers messages) {
+                                PartnerMessageHandlers messages,
+                                PartnerAccountHandlers account) {
         Router r = Router.router(vertx);
 
+        // Public health check
         r.get("/ping").handler(ctx ->
                 ctx.response()
-                        .putHeader("Content-Type", "application/json")
+                        .putHeader("Content-Type", "application/json; charset=utf-8")
                         .end(new JsonObject().put("pong", true).put("group", "partner").encode()));
 
-        // Message endpoints — protected by HMAC auth
+        // Account & rates — HMAC protected
+        r.get("/account").handler(hmacAuth).handler(account::account);
+        r.get("/rates").handler(hmacAuth).handler(account::rates);
+
+        // Message endpoints — HMAC protected
         r.post("/messages").handler(hmacAuth).handler(messages::send);
         r.get("/messages").handler(hmacAuth).handler(messages::list);
         r.get("/messages/:id").handler(hmacAuth).handler(messages::getById);

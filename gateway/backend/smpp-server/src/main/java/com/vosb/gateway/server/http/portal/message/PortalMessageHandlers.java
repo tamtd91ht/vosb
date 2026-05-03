@@ -89,7 +89,7 @@ public class PortalMessageHandlers {
           .onFailure(err -> {
               if (err instanceof IllegalArgumentException) {
                   ctx.response().setStatusCode(400)
-                          .putHeader("Content-Type", "application/problem+json")
+                          .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                           .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid UUID format\"}");
               } else {
                   HandlerUtils.handleError(ctx, err);

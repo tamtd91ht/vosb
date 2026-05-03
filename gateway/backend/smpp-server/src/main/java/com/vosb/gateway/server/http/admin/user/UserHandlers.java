@@ -69,7 +69,7 @@ public class UserHandlers {
             validateCreate(req);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"" + escape(e.getMessage()) + "\"}");
             return;
         }
@@ -86,7 +86,7 @@ public class UserHandlers {
 
             if (role == AdminRole.PARTNER) {
                 if (req.partnerId() == null) throw new IllegalArgumentException("partner_id required for PARTNER role");
-                Partner partner = partnerRepo.findById(req.partnerId())
+                Partner partner = partnerRepo.findByIdAndIsDeletedFalse(req.partnerId())
                         .orElseThrow(() -> new EntityNotFoundException("Partner not found: " + req.partnerId()));
                 user.setPartner(partner);
             }
@@ -103,7 +103,7 @@ public class UserHandlers {
             req = HandlerUtils.parseBody(ctx, UpdateUserRequest.class);
         } catch (Exception e) {
             ctx.response().setStatusCode(400)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Invalid request body\"}");
             return;
         }

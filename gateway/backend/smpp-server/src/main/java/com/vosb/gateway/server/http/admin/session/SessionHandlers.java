@@ -44,7 +44,7 @@ public class SessionHandlers {
         Optional<SMPPServerSession> session = sessionRegistry.findById(sessionId);
         if (session.isEmpty()) {
             ctx.response().setStatusCode(404)
-                    .putHeader("Content-Type", "application/problem+json")
+                    .putHeader("Content-Type", "application/problem+json; charset=utf-8")
                     .end("{\"status\":404,\"title\":\"Not Found\",\"detail\":\"No active SMPP session with id: " + sessionId + "\"}");
             return;
         }

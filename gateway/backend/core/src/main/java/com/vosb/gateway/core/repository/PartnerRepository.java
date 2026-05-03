@@ -15,11 +15,25 @@ import java.util.Optional;
 
 public interface PartnerRepository extends JpaRepository<Partner, Long> {
 
+    /** Tra cứu raw, KHÔNG filter is_deleted. Dùng cho admin hard-delete, audit, code-collision check. */
     Optional<Partner> findByCode(String code);
 
     Page<Partner> findByStatus(PartnerStatus status, Pageable pageable);
 
+    /** Code unique trên toàn bảng (kể cả soft-deleted) — tránh đụng unique constraint. */
     boolean existsByCode(String code);
+
+    /** Lookup an "active" partner = đã tạo + chưa soft-delete. Dùng cho mọi nghiệp vụ thường ngày. */
+    Optional<Partner> findByIdAndIsDeletedFalse(Long id);
+
+    Optional<Partner> findByCodeAndIsDeletedFalse(String code);
+
+    boolean existsByIdAndIsDeletedFalse(Long id);
+
+    /** List queries cho admin UI — mặc định ẩn soft-deleted. */
+    Page<Partner> findByIsDeletedFalse(Pageable pageable);
+
+    Page<Partner> findByIsDeletedFalseAndStatus(PartnerStatus status, Pageable pageable);
 
     /**
      * Atomically deducts {@code amount} from partner balance.

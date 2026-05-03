@@ -8,7 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
-import { Plus, Loader2, Trash2, GitFork } from "lucide-react";
+import { Plus, Loader2, Trash2, GitFork, Pencil } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api";
 import { Route, Partner, Channel, PageResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,8 @@ export function RoutesClient() {
   const token = session?.accessToken as string | undefined;
   const qc = useQueryClient();
 
-  const [createOpen, setCreateOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Route | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Route | null>(null);
   const [page, setPage] = useState(0);
   const [matchMode, setMatchMode] = useState<MatchMode>("carrier");
@@ -123,6 +124,20 @@ export function RoutesClient() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: object }) =>
+      apiClient(token, `/api/admin/routes/${id}`, { method: "PUT", body }),
+    onSuccess: (data: { warnings?: string[] }) => {
+      toast.success("Cập nhật route thành công");
+      (data?.warnings ?? []).forEach((w) => toast.warning(w));
+      qc.invalidateQueries({ queryKey: ["routes"] });
+      resetDialog();
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi");
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
       apiClient(token, `/api/admin/routes/${id}`, { method: "DELETE" }),
@@ -151,24 +166,68 @@ export function RoutesClient() {
   });
 
   const onSubmit = (data: RouteForm) => {
-    const body: Record<string, unknown> = {
-      partner_id: data.partner_id,
-      channel_id: data.channel_id,
-      priority: data.priority,
-    };
-    if (matchMode === "carrier") {
-      body.carrier = selectedCarrier;
+    if (editTarget) {
+      const body: Record<string, unknown> = {
+        channel_id: data.channel_id,
+        priority: data.priority,
+        fallback_channel_id: data.fallback_channel_id ?? null,
+      };
+      if (matchMode === "carrier") {
+        body.carrier = selectedCarrier;
+        body.msisdn_prefix = null;
+      } else {
+        body.msisdn_prefix = data.msisdn_prefix ?? "";
+        body.carrier = null;
+      }
+      updateMutation.mutate({ id: editTarget.id, body });
     } else {
-      body.msisdn_prefix = data.msisdn_prefix ?? "";
+      const body: Record<string, unknown> = {
+        partner_id: data.partner_id,
+        channel_id: data.channel_id,
+        priority: data.priority,
+      };
+      if (matchMode === "carrier") {
+        body.carrier = selectedCarrier;
+      } else {
+        body.msisdn_prefix = data.msisdn_prefix ?? "";
+      }
+      if (data.fallback_channel_id) {
+        body.fallback_channel_id = data.fallback_channel_id;
+      }
+      createMutation.mutate(body);
     }
-    if (data.fallback_channel_id) {
-      body.fallback_channel_id = data.fallback_channel_id;
-    }
-    createMutation.mutate(body);
   };
 
+  function openCreate() {
+    setEditTarget(null);
+    setMatchMode("carrier");
+    setSelectedCarrier("");
+    reset({ priority: 100 });
+    setDialogOpen(true);
+  }
+
+  function openEdit(r: Route) {
+    setEditTarget(r);
+    if (r.carrier) {
+      setMatchMode("carrier");
+      setSelectedCarrier(r.carrier);
+    } else {
+      setMatchMode("prefix");
+      setSelectedCarrier("");
+    }
+    reset({
+      partner_id: r.partner_id,
+      channel_id: r.channel_id,
+      fallback_channel_id: r.fallback_channel_id ?? undefined,
+      priority: r.priority,
+      msisdn_prefix: r.msisdn_prefix ?? "",
+    });
+    setDialogOpen(true);
+  }
+
   function resetDialog() {
-    setCreateOpen(false);
+    setDialogOpen(false);
+    setEditTarget(null);
     setMatchMode("carrier");
     setSelectedCarrier("");
     reset();
@@ -184,7 +243,7 @@ export function RoutesClient() {
     <div>
       <div className="flex justify-end mb-4">
         <Button
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreate}
           className="bg-indigo-600 hover:bg-indigo-500 text-white"
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -205,7 +264,7 @@ export function RoutesClient() {
               description="Thêm route để định tuyến tin nhắn từ partner đến kênh"
               action={
                 <Button
-                  onClick={() => setCreateOpen(true)}
+                  onClick={openCreate}
                   className="bg-indigo-600 hover:bg-indigo-500 text-white"
                 >
                   <Plus className="w-4 h-4 mr-2" /> Thêm route
@@ -271,14 +330,24 @@ export function RoutesClient() {
                         {format(new Date(r.created_at), "dd/MM/yyyy HH:mm", { locale: vi })}
                       </td>
                       <td className="px-6 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => setDeleteTarget(r)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-gray-500 hover:text-indigo-700 hover:bg-indigo-50"
+                            onClick={() => openEdit(r)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => setDeleteTarget(r)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -318,29 +387,47 @@ export function RoutesClient() {
         </CardContent>
       </Card>
 
-      {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) resetDialog(); }}>
-        <DialogContent className="max-w-md">
+      {/* Create / Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) resetDialog(); }}>
+        <DialogContent className="max-w-md" key={editTarget?.id ?? "create"}>
           <DialogHeader>
-            <DialogTitle>Thêm route mới</DialogTitle>
+            <DialogTitle>{editTarget ? "Sửa route" : "Thêm route mới"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-2">
             <div className="space-y-1.5">
               <Label>Partner *</Label>
-              <Select onValueChange={(v) => setValue("partner_id", Number(v))}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Chọn partner..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {partners.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.code} — {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.partner_id && (
-                <p className="text-red-500 text-xs">{errors.partner_id.message}</p>
+              {editTarget ? (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 border border-gray-200">
+                  <code className="text-xs font-mono text-indigo-700">
+                    {partnerMap[editTarget.partner_id]?.code ?? `#${editTarget.partner_id}`}
+                  </code>
+                  {partnerMap[editTarget.partner_id]?.name && (
+                    <span className="text-xs text-gray-500">
+                      — {partnerMap[editTarget.partner_id]?.name}
+                    </span>
+                  )}
+                  <span className="ml-auto text-[10px] uppercase text-gray-400">
+                    không đổi được
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <Select onValueChange={(v) => setValue("partner_id", Number(v))}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Chọn partner..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {partners.map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          {p.code} — {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.partner_id && (
+                    <p className="text-red-500 text-xs">{errors.partner_id.message}</p>
+                  )}
+                </>
               )}
             </div>
 
@@ -401,7 +488,10 @@ export function RoutesClient() {
 
             <div className="space-y-1.5">
               <Label>Kênh chính *</Label>
-              <Select onValueChange={(v) => setValue("channel_id", Number(v))}>
+              <Select
+                defaultValue={editTarget ? String(editTarget.channel_id) : undefined}
+                onValueChange={(v) => setValue("channel_id", Number(v))}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Chọn kênh..." />
                 </SelectTrigger>
@@ -421,6 +511,11 @@ export function RoutesClient() {
             <div className="space-y-1.5">
               <Label>Kênh dự phòng (tùy chọn)</Label>
               <Select
+                defaultValue={
+                  editTarget?.fallback_channel_id
+                    ? String(editTarget.fallback_channel_id)
+                    : undefined
+                }
                 onValueChange={(v) =>
                   setValue("fallback_channel_id", v ? Number(v) : undefined)
                 }
@@ -455,13 +550,19 @@ export function RoutesClient() {
               </Button>
               <Button
                 type="submit"
-                disabled={isSubmitting || createMutation.isPending}
+                disabled={
+                  isSubmitting ||
+                  createMutation.isPending ||
+                  updateMutation.isPending
+                }
                 className="bg-indigo-600 hover:bg-indigo-500 text-white"
               >
-                {(isSubmitting || createMutation.isPending) && (
+                {(isSubmitting ||
+                  createMutation.isPending ||
+                  updateMutation.isPending) && (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
                 )}
-                Tạo route
+                {editTarget ? "Lưu thay đổi" : "Tạo route"}
               </Button>
             </div>
           </form>

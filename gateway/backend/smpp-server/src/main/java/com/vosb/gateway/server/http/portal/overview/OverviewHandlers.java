@@ -39,7 +39,7 @@ public class OverviewHandlers {
         }
 
         dispatcher.executeAsync(() -> {
-            var partner = partnerRepo.findById(partnerId)
+            var partner = partnerRepo.findByIdAndIsDeletedFalse(partnerId)
                     .orElseThrow(() -> new EntityNotFoundException("Partner not found"));
 
             List<Object[]> rows = messageRepo.countByStateForPartner(partnerId);

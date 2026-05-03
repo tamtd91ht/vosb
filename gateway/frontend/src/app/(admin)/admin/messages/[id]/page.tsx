@@ -26,13 +26,14 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 export default async function MessageDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
   let message: Message | null = null;
   let error = "";
 
   try {
-    message = await apiServer(`/api/admin/messages/${params.id}`);
+    message = await apiServer(`/api/admin/messages/${id}`);
   } catch (e: unknown) {
     error = e instanceof Error ? e.message : "Không thể tải tin nhắn";
   }

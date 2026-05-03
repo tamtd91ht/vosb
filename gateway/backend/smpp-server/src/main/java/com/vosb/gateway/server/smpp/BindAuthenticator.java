@@ -1,7 +1,9 @@
 package com.vosb.gateway.server.smpp;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.vosb.gateway.core.domain.Partner;
 import com.vosb.gateway.core.domain.PartnerSmppAccount;
+import com.vosb.gateway.core.domain.enums.PartnerStatus;
 import com.vosb.gateway.core.domain.enums.SmppAccountStatus;
 import com.vosb.gateway.core.repository.PartnerSmppAccountRepository;
 import com.vosb.gateway.core.security.PasswordHasher;
@@ -60,6 +62,19 @@ public class BindAuthenticator {
         if (acc.getStatus() != SmppAccountStatus.ACTIVE) {
             log.warn("SMPP bind rejected: systemId '{}' is {}", systemId, acc.getStatus());
             throw new BindRejected(SMPPConstant.STAT_ESME_RBINDFAIL, "Account inactive");
+        }
+
+        Partner partner = acc.getPartner();
+        if (partner.isDeleted()) {
+            log.warn("SMPP bind rejected: partner '{}' for systemId '{}' has been removed",
+                    partner.getCode(), systemId);
+            throw new BindRejected(SMPPConstant.STAT_ESME_RBINDFAIL, "Partner removed");
+        }
+        if (partner.getStatus() != PartnerStatus.ACTIVE) {
+            log.warn("SMPP bind rejected: partner '{}' for systemId '{}' is {}",
+                    partner.getCode(), systemId, partner.getStatus());
+            throw new BindRejected(SMPPConstant.STAT_ESME_RBINDFAIL,
+                    "Partner " + partner.getStatus().name().toLowerCase());
         }
 
         verifyPassword(systemId, password, acc.getPasswordHash());
