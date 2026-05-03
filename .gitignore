@@ -1,0 +1,38 @@
+# Claude Code local settings (per-machine permissions)
+.claude/settings.local.json
+
+# Build outputs
+**/target/
+**/.next/
+**/dist/
+**/build/
+**/out/
+
+# Dependencies
+**/node_modules/
+
+# Logs
+*.log
+**/logs/
+
+# Local env files
+.env
+.env.local
+.env.*.local
+*.env
+
+# OS / Editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Maven / Gradle
+**/target/
+**/.gradle/
+**/.mvn/wrapper/maven-wrapper.jar
+
+# Test coverage
+**/coverage/
+**/.nyc_output/
